@@ -1,0 +1,7 @@
+{
+    "scan_files": [
+        "include/shlogger_constants.h",
+        "include/network_constants.h"
+    ],
+    "output_dir": "xmacro_output"
+}
