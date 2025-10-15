@@ -1,0 +1,5 @@
+wmic process where "name='python.exe'" get ProcessId,ThreadCount
+
+Get-Process python | Select-Object Id,Threads
+(Get-Process python).Threads | Select-Object Id,StartAddress,ThreadState
+
