@@ -1,0 +1,32 @@
+cmake_minimum_required(VERSION 3.15)
+project(example_pybind LANGUAGES CXX)
+
+# 指定 Python & pybind11
+find_package(pybind11 REQUIRED)
+
+# 强制生成 .pdb 调试符号
+set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
+set(CMAKE_BUILD_TYPE Debug)  # 重要！
+
+# 禁用优化，启用调试信息
+if(MSVC)
+    add_compile_options(/Zi /Od)
+    add_link_options(/DEBUG)
+endif()
+
+# 生成 Pybind 模块（注意 MODULE）
+pybind11_add_module(example example.cpp)
+
+# 输出目录指定为 build/
+set_target_properties(example PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/cpp_module/build"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/cpp_module/build"
+)
+
+# 链接选项，确保 PDB 输出
+if(MSVC)
+    set_target_properties(example PROPERTIES
+        COMPILE_PDB_NAME "example"
+        COMPILE_PDB_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/cpp_module/build"
+    )
+endif()
