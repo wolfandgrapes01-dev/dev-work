@@ -1,0 +1,11 @@
+.def("riskyMethod", [](MyClass &self, int x) {
+    try {
+        self.riskyMethod(x);
+    } catch (const std::exception &e) {
+        std::cerr << "[C++] std::exception: " << e.what() << std::endl;
+        throw;
+    } catch (...) {
+        std::cerr << "[C++] unknown exception caught in riskyMethod()" << std::endl;
+        throw;
+    }
+})
