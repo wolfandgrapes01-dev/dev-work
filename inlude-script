@@ -1,84 +1,61 @@
 import os
-import xml.etree.ElementTree as ET
+import re
 from collections import defaultdict
 
-# 解析单个 .vcxproj 文件，提取依赖（静态库和头文件目录）
-def parse_vcxproj(project_path):
-    deps = {"libs": [], "includes": []}
-    ns = {"msb": "http://schemas.microsoft.com/developer/msbuild/2003"}
+# 匹配 #include "xxx.h" 或 #include <xxx.h>
+INCLUDE_RE = re.compile(r'#include\s*["<](.*?)[">]')
 
-    try:
-        tree = ET.parse(project_path)
-        root = tree.getroot()
+def is_system_include(path):
+    """过滤系统头文件"""
+    system_keywords = [
+        "Windows Kits", "Microsoft Visual Studio", "Program Files",
+        "VC\\include", "ucrt", "cstddef", "iostream", "string", "vector",
+        "memory", "map", "set", "unordered", "algorithm"
+    ]
+    return any(k.lower() in path.lower() for k in system_keywords)
 
-        for item_def in root.findall(".//msb:ItemDefinitionGroup", ns):
-            # 链接库依赖
-            link = item_def.find("msb:Link", ns)
-            if link is not None:
-                libs = link.find("msb:AdditionalDependencies", ns)
-                if libs is not None and libs.text:
-                    for lib in libs.text.split(";"):
-                        lib = lib.strip()
-                        if lib and not lib.startswith("%("):
-                            deps["libs"].append(lib)
+def collect_includes(root):
+    """扫描整个目录并收集 include 关系"""
+    includes = defaultdict(set)
+    all_files = {}  # 文件名（不带路径） -> 绝对路径
 
-            # include 目录依赖
-            cl = item_def.find("msb:ClCompile", ns)
-            if cl is not None:
-                inc = cl.find("msb:AdditionalIncludeDirectories", ns)
-                if inc is not None and inc.text:
-                    for path in inc.text.split(";"):
-                        path = path.strip()
-                        if path and not path.startswith("%("):
-                            deps["includes"].append(path)
+    # 1️⃣ 先收集所有文件
+    for dirpath, _, filenames in os.walk(root):
+        for f in filenames:
+            if f.endswith((".cpp", ".h", ".hpp")):
+                full_path = os.path.abspath(os.path.join(dirpath, f))
+                all_files[f] = full_path
 
-    except Exception as e:
-        print(f"[!] Failed to parse {project_path}: {e}")
+    # 2️⃣ 扫描 include 关系
+    for file_path in all_files.values():
+        try:
+            with open(file_path, encoding="utf-8", errors="ignore") as file:
+                for line in file:
+                    match = INCLUDE_RE.search(line)
+                    if match:
+                        inc = match.group(1).strip()
+                        if not is_system_include(inc):
+                            includes[file_path].add(inc)
+        except Exception:
+            pass
 
-    return deps
-
-
-# 构建跨项目依赖树
-def build_dependency_tree(project, all_projects, visited=None):
-    if visited is None:
-        visited = set()
-
-    project_name = os.path.splitext(os.path.basename(project))[0]
-    if project_name in visited:
-        return {}
-
-    visited.add(project_name)
-
-    deps_info = parse_vcxproj(project)
-    tree = defaultdict(dict)
-
-    # 尝试将 .lib 名称匹配到本地其他项目
-    for lib in deps_info["libs"]:
-        lib_name = os.path.splitext(os.path.basename(lib))[0]
-        for other_proj in all_projects:
-            other_name = os.path.splitext(os.path.basename(other_proj))[0]
-            if lib_name.lower() == other_name.lower():
-                tree[project_name][other_name] = build_dependency_tree(other_proj, all_projects, visited)
-
-    return tree
-
-
-def print_tree(tree, indent=0):
-    for k, v in tree.items():
-        print("  " * indent + f"📁 {k}")
-        print_tree(v, indent + 1)
+    # 3️⃣ 将 include 名解析为实际路径（同名匹配）
+    resolved = []
+    for src, incs in includes.items():
+        for inc in incs:
+            name = os.path.basename(inc)
+            if name in all_files:
+                resolved.append((src, all_files[name]))
+            else:
+                # 若没找到匹配文件，也输出原始 include 以备检查
+                resolved.append((src, inc))
+    return resolved
 
 
 if __name__ == "__main__":
-    root_dir = r"D:\Projects"  # 你的根目录
-    all_projects = [
-        os.path.join(dp, f)
-        for dp, _, files in os.walk(root_dir)
-        for f in files if f.endswith(".vcxproj")
-    ]
+    root_dir = os.getcwd()  # 当前目录作为根目录
+    deps = collect_includes(root_dir)
 
-    # 你可以从任意一个顶层项目开始，比如 AppMain
-    root_project = r"D:\Projects\AppMain\AppMain.vcxproj"
-
-    deps_tree = build_dependency_tree(root_project, all_projects)
-    print_tree(deps_tree)
+    print("=== 文件依赖关系列表（完整路径） ===")
+    for src, dep in deps:
+        print(f"{src} -> {dep}")
