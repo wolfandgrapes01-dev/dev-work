@@ -2,12 +2,14 @@ import os
 import xml.etree.ElementTree as ET
 from collections import defaultdict
 
-def parse_vcxproj(project_path, all_projects):
+# 解析单个 .vcxproj 文件，提取依赖（静态库和头文件目录）
+def parse_vcxproj(project_path):
     deps = {"libs": [], "includes": []}
+    ns = {"msb": "http://schemas.microsoft.com/developer/msbuild/2003"}
+
     try:
         tree = ET.parse(project_path)
         root = tree.getroot()
-        ns = {'msb': 'http://schemas.microsoft.com/developer/msbuild/2003'}
 
         for item_def in root.findall(".//msb:ItemDefinitionGroup", ns):
             # 链接库依赖
@@ -15,44 +17,50 @@ def parse_vcxproj(project_path, all_projects):
             if link is not None:
                 libs = link.find("msb:AdditionalDependencies", ns)
                 if libs is not None and libs.text:
-                    deps["libs"].extend([l.strip() for l in libs.text.split(";") if l.strip()])
+                    for lib in libs.text.split(";"):
+                        lib = lib.strip()
+                        if lib and not lib.startswith("%("):
+                            deps["libs"].append(lib)
 
-            # 头文件依赖
+            # include 目录依赖
             cl = item_def.find("msb:ClCompile", ns)
             if cl is not None:
                 inc = cl.find("msb:AdditionalIncludeDirectories", ns)
                 if inc is not None and inc.text:
-                    deps["includes"].extend([i.strip() for i in inc.text.split(";") if i.strip()])
+                    for path in inc.text.split(";"):
+                        path = path.strip()
+                        if path and not path.startswith("%("):
+                            deps["includes"].append(path)
 
     except Exception as e:
         print(f"[!] Failed to parse {project_path}: {e}")
 
-    # 根据 .lib 名称判断是否依赖本地其他项目
-    local_projects = []
-    for lib in deps["libs"]:
-        name = os.path.splitext(os.path.basename(lib))[0]
-        for proj in all_projects:
-            if name.lower() == os.path.splitext(os.path.basename(proj))[0].lower():
-                local_projects.append(proj)
-                break
-
-    return local_projects, deps
+    return deps
 
 
-def build_dependency_tree(start_project, all_projects, visited=None):
+# 构建跨项目依赖树
+def build_dependency_tree(project, all_projects, visited=None):
     if visited is None:
         visited = set()
 
-    if start_project in visited:
+    project_name = os.path.splitext(os.path.basename(project))[0]
+    if project_name in visited:
         return {}
 
-    visited.add(start_project)
-    deps_tree = defaultdict(dict)
+    visited.add(project_name)
 
-    sub_projects, _ = parse_vcxproj(start_project, all_projects)
-    for sub in sub_projects:
-        deps_tree[os.path.basename(start_project)][os.path.basename(sub)] = build_dependency_tree(sub, all_projects, visited)
-    return deps_tree
+    deps_info = parse_vcxproj(project)
+    tree = defaultdict(dict)
+
+    # 尝试将 .lib 名称匹配到本地其他项目
+    for lib in deps_info["libs"]:
+        lib_name = os.path.splitext(os.path.basename(lib))[0]
+        for other_proj in all_projects:
+            other_name = os.path.splitext(os.path.basename(other_proj))[0]
+            if lib_name.lower() == other_name.lower():
+                tree[project_name][other_name] = build_dependency_tree(other_proj, all_projects, visited)
+
+    return tree
 
 
 def print_tree(tree, indent=0):
@@ -62,11 +70,15 @@ def print_tree(tree, indent=0):
 
 
 if __name__ == "__main__":
-    solution_dir = r"D:\YourSolution"
-    all_projects = [os.path.join(dp, f)
-                    for dp, _, files in os.walk(solution_dir)
-                    for f in files if f.endswith(".vcxproj")]
+    root_dir = r"D:\Projects"  # 你的根目录
+    all_projects = [
+        os.path.join(dp, f)
+        for dp, _, files in os.walk(root_dir)
+        for f in files if f.endswith(".vcxproj")
+    ]
 
-    root_proj = r"D:\YourSolution\MainApp\MainApp.vcxproj"
-    tree = build_dependency_tree(root_proj, all_projects)
-    print_tree(tree)
+    # 你可以从任意一个顶层项目开始，比如 AppMain
+    root_project = r"D:\Projects\AppMain\AppMain.vcxproj"
+
+    deps_tree = build_dependency_tree(root_project, all_projects)
+    print_tree(deps_tree)
