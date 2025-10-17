@@ -1,12 +1,11 @@
 import os
 import re
-import csv
 
 root_dir = r"C:\path\to\your\root"
 extensions = ('.cpp', '.c', '.h', '.hpp')
 include_pattern = re.compile(r'#include\s+[<"](.+?)[>"]')
 
-# 文件直接依赖表：{文件绝对路径: [include原写法列表]}
+# 文件直接依赖表
 dependency_map = {}
 
 # --------------------------
@@ -41,14 +40,13 @@ def analyze_includes(src_dir):
                     for line in f:
                         stripped = line.strip()
 
-                        # 处理多行注释
+                        # 多行注释
                         if in_block_comment:
                             if '*/' in stripped:
                                 in_block_comment = False
                                 stripped = stripped.split('*/',1)[1]
                             else:
                                 continue
-
                         if '/*' in stripped:
                             if '*/' in stripped:
                                 stripped = re.sub(r'/\*.*?\*/', '', stripped)
@@ -56,14 +54,14 @@ def analyze_includes(src_dir):
                                 in_block_comment = True
                                 stripped = stripped.split('/*',1)[0]
 
-                        # 去掉单行注释
+                        # 单行注释
                         stripped = re.sub(r'//.*', '', stripped).strip()
                         if not stripped:
                             continue
 
                         match = include_pattern.search(stripped)
                         if match:
-                            include_file = match.group(1)  # 保留源码写法
+                            include_file = match.group(1)
                             includes.append(include_file)
 
                 if includes:
@@ -73,27 +71,37 @@ def analyze_includes(src_dir):
                 print(f"⚠️ 读取失败: {full_path} - {e}")
 
 # --------------------------
-# 3️⃣ 递归解析依赖（保留顶层对象路径）
+# 3️⃣ 生成树形结构
 # --------------------------
-def resolve_recursive_dependencies(file_path, visited=None):
+def build_tree(file_path, prefix='', visited=None):
     if visited is None:
         visited = set()
+    lines = []
     if file_path in visited:
-        return []
+        lines.append(prefix + "(循环依赖)")
+        return lines
     visited.add(file_path)
 
     if file_path not in dependency_map:
-        return []
+        return lines
 
-    result = []
-    for dep in dependency_map[file_path]:
-        result.append((file_path, dep))
-        # 只有当 dep 本身也在 dependency_map 中才递归
+    deps = dependency_map[file_path]
+    count = len(deps)
+    for i, dep in enumerate(deps):
+        branch = "└─ " if i == count - 1 else "├─ "
+        sub_prefix = "   " if i == count - 1 else "│  "
+
+        lines.append(prefix + branch + dep)
+
+        # 查找 dep 对应的顶层文件路径（basename 匹配）
+        matched_dep = None
         for candidate in dependency_map:
             if os.path.basename(dep) == os.path.basename(candidate):
-                result.extend(resolve_recursive_dependencies(candidate, visited))
+                matched_dep = candidate
                 break
-    return result
+        if matched_dep:
+            lines.extend(build_tree(matched_dep, prefix + sub_prefix, visited.copy()))
+    return lines
 
 # --------------------------
 # 主流程
@@ -105,19 +113,16 @@ for src in src_dirs:
     print(f"  → 分析 {src}")
     analyze_includes(src)
 
-# 输出完整递归依赖
-all_recursive_deps = []
-for file_path in dependency_map:
-    all_recursive_deps.extend(resolve_recursive_dependencies(file_path))
+# --------------------------
+# 输出树形 txt
+# --------------------------
+output_file = os.path.join(root_dir, "dependencies_tree.txt")
+with open(output_file, 'w', encoding='utf-8') as f:
+    for top_file in dependency_map:
+        f.write(top_file + "\n")
+        tree_lines = build_tree(top_file, '')
+        for line in tree_lines:
+            f.write(line + "\n")
+        f.write("\n")
 
-# 仅保留顶层对象路径，依赖对象保留源码写法
-output_file = os.path.join(root_dir, "dependencies_recursive.csv")
-with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
-    writer = csv.writer(csvfile)
-    writer.writerow(["source_file", "included_file"])
-    for src, dep in all_recursive_deps:
-        top_level_src = src  # 顶层对象的绝对路径
-        writer.writerow([top_level_src, dep])
-
-print(f"\n✅ 递归依赖分析完成，结果已输出到：{output_file}")
-print(f"📦 共发现 {len(all_recursive_deps)} 条依赖关系。")
+print(f"\n✅ 依赖树已输出到：{output_file}")
