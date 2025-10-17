@@ -6,7 +6,7 @@ root_dir = r"C:\path\to\your\root"
 extensions = ('.cpp', '.c', '.h', '.hpp')
 include_pattern = re.compile(r'#include\s+[<"](.+?)[>"]')
 
-# 文件直接依赖表
+# 文件直接依赖表：{文件绝对路径: [include原写法列表]}
 dependency_map = {}
 
 # --------------------------
@@ -22,7 +22,7 @@ def find_src_dirs(root):
     return src_dirs
 
 # --------------------------
-# 2️⃣ 分析 include（忽略注释，保留原写法）
+# 2️⃣ 分析 include（忽略注释，保留源码写法）
 # --------------------------
 def analyze_includes(src_dir):
     for dirpath, dirnames, filenames in os.walk(src_dir):
@@ -63,15 +63,8 @@ def analyze_includes(src_dir):
 
                         match = include_pattern.search(stripped)
                         if match:
-                            include_file = match.group(1)  # 保留原写法
-
-                            # 判断该 include 是否在根目录下 src 文件夹中
-                            include_path = None
-                            candidate = os.path.join(dirpath, include_file)
-                            if os.path.exists(candidate) and candidate.startswith(root_dir):
-                                include_path = os.path.abspath(candidate)
-
-                            includes.append(include_path or include_file)  # 如果是根目录 src 文件就用路径，否则保留原写法
+                            include_file = match.group(1)  # 保留源码写法
+                            includes.append(include_file)
 
                 if includes:
                     dependency_map[full_path] = includes
@@ -80,7 +73,7 @@ def analyze_includes(src_dir):
                 print(f"⚠️ 读取失败: {full_path} - {e}")
 
 # --------------------------
-# 3️⃣ 递归解析依赖
+# 3️⃣ 递归解析依赖（保留顶层对象路径）
 # --------------------------
 def resolve_recursive_dependencies(file_path, visited=None):
     if visited is None:
@@ -95,9 +88,11 @@ def resolve_recursive_dependencies(file_path, visited=None):
     result = []
     for dep in dependency_map[file_path]:
         result.append((file_path, dep))
-        # 只有当 dep 是绝对路径且在 dependency_map 中才递归
-        if dep in dependency_map:
-            result.extend(resolve_recursive_dependencies(dep, visited))
+        # 只有当 dep 本身也在 dependency_map 中才递归
+        for candidate in dependency_map:
+            if os.path.basename(dep) == os.path.basename(candidate):
+                result.extend(resolve_recursive_dependencies(candidate, visited))
+                break
     return result
 
 # --------------------------
@@ -115,11 +110,14 @@ all_recursive_deps = []
 for file_path in dependency_map:
     all_recursive_deps.extend(resolve_recursive_dependencies(file_path))
 
+# 仅保留顶层对象路径，依赖对象保留源码写法
 output_file = os.path.join(root_dir, "dependencies_recursive.csv")
 with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
     writer = csv.writer(csvfile)
     writer.writerow(["source_file", "included_file"])
-    writer.writerows(all_recursive_deps)
+    for src, dep in all_recursive_deps:
+        top_level_src = src  # 顶层对象的绝对路径
+        writer.writerow([top_level_src, dep])
 
 print(f"\n✅ 递归依赖分析完成，结果已输出到：{output_file}")
 print(f"📦 共发现 {len(all_recursive_deps)} 条依赖关系。")
