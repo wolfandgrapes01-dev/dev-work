@@ -1,61 +1,53 @@
 import os
 import re
-from collections import defaultdict
+import csv
 
-# 匹配 #include "xxx.h" 或 #include <xxx.h>
-INCLUDE_RE = re.compile(r'#include\s*["<](.*?)[">]')
+# 配置根目录（改成你的项目根路径）
+root_dir = r"C:\path\to\your\root"
 
-def is_system_include(path):
-    """过滤系统头文件"""
-    system_keywords = [
-        "Windows Kits", "Microsoft Visual Studio", "Program Files",
-        "VC\\include", "ucrt", "cstddef", "iostream", "string", "vector",
-        "memory", "map", "set", "unordered", "algorithm"
-    ]
-    return any(k.lower() in path.lower() for k in system_keywords)
+# 只识别这些扩展名的文件
+extensions = ('.cpp', '.c', '.h', '.hpp')
 
-def collect_includes(root):
-    """扫描整个目录并收集 include 关系"""
-    includes = defaultdict(set)
-    all_files = {}  # 文件名（不带路径） -> 绝对路径
+# include 正则匹配
+include_pattern = re.compile(r'#include\s+[<"](.+?)[>"]')
 
-    # 1️⃣ 先收集所有文件
-    for dirpath, _, filenames in os.walk(root):
-        for f in filenames:
-            if f.endswith((".cpp", ".h", ".hpp")):
-                full_path = os.path.abspath(os.path.join(dirpath, f))
-                all_files[f] = full_path
+# 保存结果
+dependencies = []
 
-    # 2️⃣ 扫描 include 关系
-    for file_path in all_files.values():
-        try:
-            with open(file_path, encoding="utf-8", errors="ignore") as file:
-                for line in file:
-                    match = INCLUDE_RE.search(line)
-                    if match:
-                        inc = match.group(1).strip()
-                        if not is_system_include(inc):
-                            includes[file_path].add(inc)
-        except Exception:
-            pass
+# 遍历所有文件
+for dirpath, _, filenames in os.walk(root_dir):
+    for filename in filenames:
+        if filename.endswith(extensions):
+            full_path = os.path.abspath(os.path.join(dirpath, filename))
+            try:
+                with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    for line in f:
+                        match = include_pattern.search(line)
+                        if match:
+                            include_file = match.group(1)
+                            # 尝试找到被包含文件的绝对路径
+                            include_path = None
+                            # 优先查找同目录下文件
+                            candidate = os.path.join(dirpath, include_file)
+                            if os.path.exists(candidate):
+                                include_path = os.path.abspath(candidate)
+                            else:
+                                # 在整个项目中搜索匹配
+                                for root, _, files in os.walk(root_dir):
+                                    if os.path.basename(include_file) in files:
+                                        include_path = os.path.abspath(os.path.join(root, include_file))
+                                        break
+                            dependencies.append((full_path, include_path or include_file))
+            except PermissionError:
+                print(f"⚠️ 无法访问: {full_path}")
+            except Exception as e:
+                print(f"⚠️ 读取错误 {full_path}: {e}")
 
-    # 3️⃣ 将 include 名解析为实际路径（同名匹配）
-    resolved = []
-    for src, incs in includes.items():
-        for inc in incs:
-            name = os.path.basename(inc)
-            if name in all_files:
-                resolved.append((src, all_files[name]))
-            else:
-                # 若没找到匹配文件，也输出原始 include 以备检查
-                resolved.append((src, inc))
-    return resolved
+# 输出 CSV 文件
+output_file = os.path.join(root_dir, "dependencies.csv")
+with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
+    writer = csv.writer(csvfile)
+    writer.writerow(["source_file", "included_file"])
+    writer.writerows(dependencies)
 
-
-if __name__ == "__main__":
-    root_dir = os.getcwd()  # 当前目录作为根目录
-    deps = collect_includes(root_dir)
-
-    print("=== 文件依赖关系列表（完整路径） ===")
-    for src, dep in deps:
-        print(f"{src} -> {dep}")
+print(f"✅ 依赖关系已输出到: {output_file}")
