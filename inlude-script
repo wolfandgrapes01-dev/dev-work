@@ -1,0 +1,59 @@
+import os
+import re
+from collections import defaultdict
+
+def is_system_include(path):
+    # 过滤系统头文件
+    system_paths = [
+        r"\\Microsoft Visual Studio",
+        r"\\Windows Kits",
+        r"\\Program Files",
+        r"\\VC\\include",
+    ]
+    return any(p.lower() in path.lower() for p in system_paths)
+
+def parse_showincludes(logfile):
+    include_pattern = re.compile(r"Note: including file:\s*(.*)")
+    deps = defaultdict(list)
+    stack = []
+
+    with open(logfile, encoding='utf-8', errors='ignore') as f:
+        for line in f:
+            match = include_pattern.search(line)
+            if not match:
+                continue
+
+            raw_path = match.group(1).rstrip()
+            level = len(line) - len(line.lstrip())
+            path = os.path.normpath(raw_path)
+
+            # 如果是系统路径则忽略
+            if is_system_include(path):
+                continue
+
+            # 维护依赖层级栈
+            while stack and stack[-1][1] >= level:
+                stack.pop()
+
+            if stack:
+                parent = stack[-1][0]
+                deps[parent].append(path)
+
+            stack.append((path, level))
+
+    return deps
+
+
+def write_csv(deps, output_file="dependencies.csv"):
+    with open(output_file, "w", encoding="utf-8") as f:
+        f.write("Source,DependsOn\n")
+        for src, incs in deps.items():
+            for inc in incs:
+                if (src.endswith(".cpp") or src.endswith(".h")) and (inc.endswith(".h") or inc.endswith(".cpp")):
+                    f.write(f"{src},{inc}\n")
+    print(f"导出完成: {output_file}")
+
+
+if __name__ == "__main__":
+    deps = parse_showincludes("includes.log")
+    write_csv(deps)
