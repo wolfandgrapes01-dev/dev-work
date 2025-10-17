@@ -98,7 +98,7 @@ with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as executor:
             dependency_map[full_path] = includes
 
 # --------------------------
-# 5️⃣ 生成树形结构
+# 5️⃣ 生成树形结构（递归）
 # --------------------------
 def build_tree(file_path, prefix='', visited=None):
     if visited is None:
@@ -108,11 +108,7 @@ def build_tree(file_path, prefix='', visited=None):
     visited.add(file_path)
 
     lines = []
-    if file_path not in dependency_map:
-        visited.remove(file_path)
-        return lines
-
-    deps = dependency_map[file_path]
+    deps = dependency_map.get(file_path, [])
     count = len(deps)
     for i, dep in enumerate(deps):
         branch = "└─ " if i == count - 1 else "├─ "
@@ -124,15 +120,19 @@ def build_tree(file_path, prefix='', visited=None):
     return lines
 
 # --------------------------
-# 6️⃣ 输出树形 TXT
+# 6️⃣ 输出树形 TXT（批量写入，提升性能）
 # --------------------------
 output_file = os.path.join(root_dir, "dependencies_tree.txt")
+
+all_output_lines = []
+for top_file in dependency_map:
+    all_output_lines.append(top_file + "\n")
+    tree_lines = build_tree(top_file)
+    all_output_lines.extend(line + "\n" for line in tree_lines)
+    all_output_lines.append("\n")  # 顶层文件间加空行
+
+# 一次性写入文件
 with open(output_file, 'w', encoding='utf-8') as f:
-    for top_file in dependency_map:
-        f.write(top_file + "\n")
-        tree_lines = build_tree(top_file)
-        for line in tree_lines:
-            f.write(line + "\n")
-        f.write("\n")
+    f.writelines(all_output_lines)
 
 print(f"\n✅ 依赖树已输出到：{output_file}")
