@@ -1,16 +1,25 @@
 import os
 import re
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm  # 进度条
 
 root_dir = r"C:\path\to\your\root"
 extensions = ('.cpp', '.c', '.h', '.hpp')
 include_pattern = re.compile(r'#include\s+[<"](.+?)[>"]')
 
-# 文件直接依赖表
-# {文件绝对路径: [依赖对象绝对路径列表]}
-dependency_map = {}
+# --------------------------
+# 1️⃣ 构建文件索引
+# --------------------------
+file_index = defaultdict(list)
+for dirpath, dirnames, filenames in os.walk(root_dir):
+    dirnames[:] = [d for d in dirnames if d.lower() != ".svn"]
+    for filename in filenames:
+        if filename.endswith(extensions):
+            file_index[filename].append(os.path.abspath(os.path.join(dirpath, filename)))
 
 # --------------------------
-# 1️⃣ 找 src 文件夹
+# 2️⃣ 找 src 文件夹
 # --------------------------
 def find_src_dirs(root):
     src_dirs = []
@@ -22,86 +31,86 @@ def find_src_dirs(root):
     return src_dirs
 
 # --------------------------
-# 2️⃣ 分析 include（去除注释，补全路径）
+# 3️⃣ 文件解析函数
 # --------------------------
-def analyze_includes(src_dir):
-    for dirpath, dirnames, filenames in os.walk(src_dir):
-        dirnames[:] = [d for d in dirnames if d.lower() != ".svn"]
+def parse_file(full_path):
+    includes = []
+    try:
+        with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
+            in_block_comment = False
+            for line in f:
+                stripped = line.strip()
+                # 多行注释
+                if in_block_comment:
+                    if '*/' in stripped:
+                        in_block_comment = False
+                        stripped = stripped.split('*/',1)[1]
+                    else:
+                        continue
+                if '/*' in stripped:
+                    if '*/' in stripped:
+                        stripped = re.sub(r'/\*.*?\*/', '', stripped)
+                    else:
+                        in_block_comment = True
+                        stripped = stripped.split('/*',1)[0]
+                # 单行注释
+                stripped = re.sub(r'//.*', '', stripped).strip()
+                if not stripped:
+                    continue
 
+                match = include_pattern.search(stripped)
+                if match:
+                    include_file = match.group(1)
+                    # 优先同目录
+                    candidate = os.path.join(os.path.dirname(full_path), include_file)
+                    if os.path.exists(candidate):
+                        include_path = os.path.abspath(candidate)
+                    else:
+                        basename = os.path.basename(include_file)
+                        if basename in file_index:
+                            include_path = file_index[basename][0]
+                        else:
+                            include_path = include_file  # 外部库或找不到
+                    includes.append(include_path)
+    except Exception as e:
+        print(f"⚠️ 读取失败: {full_path} - {e}")
+    return full_path, includes
+
+# --------------------------
+# 4️⃣ 多线程解析 src 文件夹
+# --------------------------
+dependency_map = {}
+src_dirs = find_src_dirs(root_dir)
+all_files = []
+
+for src in src_dirs:
+    for dirpath, _, filenames in os.walk(src):
         for filename in filenames:
-            if not filename.endswith(extensions):
-                continue
+            if filename.endswith(extensions):
+                all_files.append(os.path.abspath(os.path.join(dirpath, filename)))
 
-            full_path = os.path.abspath(os.path.join(dirpath, filename))
-            includes = []
+print(f"🔍 找到 {len(all_files)} 个源文件，开始解析...")
 
-            try:
-                with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    in_block_comment = False
-                    for line in f:
-                        stripped = line.strip()
-
-                        # 多行注释处理
-                        if in_block_comment:
-                            if '*/' in stripped:
-                                in_block_comment = False
-                                stripped = stripped.split('*/',1)[1]
-                            else:
-                                continue
-
-                        if '/*' in stripped:
-                            if '*/' in stripped:
-                                stripped = re.sub(r'/\*.*?\*/', '', stripped)
-                            else:
-                                in_block_comment = True
-                                stripped = stripped.split('/*',1)[0]
-
-                        # 单行注释
-                        stripped = re.sub(r'//.*', '', stripped).strip()
-                        if not stripped:
-                            continue
-
-                        match = include_pattern.search(stripped)
-                        if match:
-                            include_file = match.group(1)
-
-                            # 优先查找同目录
-                            candidate = os.path.join(dirpath, include_file)
-                            if os.path.exists(candidate):
-                                include_path = os.path.abspath(candidate)
-                            else:
-                                # 在整个根目录搜索
-                                include_path = None
-                                for root, subdirs, files in os.walk(root_dir):
-                                    subdirs[:] = [d for d in subdirs if d.lower() != ".svn"]
-                                    if os.path.basename(include_file) in files:
-                                        include_path = os.path.abspath(os.path.join(root, include_file))
-                                        break
-                                # 如果没找到，保留源码写法
-                                if include_path is None:
-                                    include_path = include_file
-
-                            includes.append(include_path)
-
-                if includes:
-                    dependency_map[full_path] = includes
-
-            except Exception as e:
-                print(f"⚠️ 读取失败: {full_path} - {e}")
+with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as executor:
+    futures = {executor.submit(parse_file, f): f for f in all_files}
+    for future in tqdm(as_completed(futures), total=len(futures)):
+        full_path, includes = future.result()
+        if includes:
+            dependency_map[full_path] = includes
 
 # --------------------------
-# 3️⃣ 生成树形结构
+# 5️⃣ 生成树形结构
 # --------------------------
 def build_tree(file_path, prefix='', visited=None):
     if visited is None:
         visited = set()
-    lines = []
     if file_path in visited:
-        lines.append(prefix + "(循环依赖)")
-        return lines
+        return [prefix + "(循环依赖)"]
     visited.add(file_path)
 
+    lines = []
     if file_path not in dependency_map:
+        visited.remove(file_path)
         return lines
 
     deps = dependency_map[file_path]
@@ -109,33 +118,20 @@ def build_tree(file_path, prefix='', visited=None):
     for i, dep in enumerate(deps):
         branch = "└─ " if i == count - 1 else "├─ "
         sub_prefix = "   " if i == count - 1 else "│  "
-
         lines.append(prefix + branch + dep)
-
-        # 递归：如果依赖对象在 dependency_map 中，继续生成子树
         if dep in dependency_map:
-            lines.extend(build_tree(dep, prefix + sub_prefix, visited.copy()))
-
+            lines.extend(build_tree(dep, prefix + sub_prefix, visited))
+    visited.remove(file_path)
     return lines
 
 # --------------------------
-# 主流程
-# --------------------------
-src_dirs = find_src_dirs(root_dir)
-print(f"🔍 找到 {len(src_dirs)} 个 src 文件夹。")
-
-for src in src_dirs:
-    print(f"  → 分析 {src}")
-    analyze_includes(src)
-
-# --------------------------
-# 输出树形 txt
+# 6️⃣ 输出树形 TXT
 # --------------------------
 output_file = os.path.join(root_dir, "dependencies_tree.txt")
 with open(output_file, 'w', encoding='utf-8') as f:
     for top_file in dependency_map:
         f.write(top_file + "\n")
-        tree_lines = build_tree(top_file, '')
+        tree_lines = build_tree(top_file)
         for line in tree_lines:
             f.write(line + "\n")
         f.write("\n")
