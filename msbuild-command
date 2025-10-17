@@ -1,0 +1,1 @@
+msbuild MySolution.sln /t:Rebuild /p:Configuration=Debug /p:Platform="x64" /p:CLToolExe=cl.exe /p:CLToolPath="C:\Program Files (x86)\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\<version>\bin\Hostx64\x64" /v:diag > includes.log
