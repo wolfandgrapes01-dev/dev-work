@@ -8,12 +8,13 @@ import io
 # --------------------------
 # 配置
 # --------------------------
-root_dir = r"C:\path\to\your\root"  # 修改为你的根目录
+root_dir = r"C:\path\to\your\root"  # 根目录
+project_name = "ProjectA"            # 只分析 ProjectA
 extensions = ('.cpp', '.c', '.h', '.hpp')
 include_pattern = re.compile(r'#include\s+[<"](.+?)[>"]')
 
 # --------------------------
-# 1️⃣ 构建文件索引
+# 1️⃣ 构建文件索引（root 下所有项目文件，用于跨项目查找）
 # --------------------------
 file_index = defaultdict(list)
 for dirpath, dirnames, filenames in os.walk(root_dir):
@@ -23,34 +24,31 @@ for dirpath, dirnames, filenames in os.walk(root_dir):
             file_index[filename].append(os.path.abspath(os.path.join(dirpath, filename)))
 
 # --------------------------
-# 2️⃣ 找 src 文件夹
+# 2️⃣ 收集 ProjectA/src 顶层分析对象
 # --------------------------
-def find_src_dirs(root):
-    src_dirs = []
-    for dirpath, dirnames, _ in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d.lower() != ".svn"]
-        for d in dirnames:
-            if d.lower() == "src":
-                src_dirs.append(os.path.join(dirpath, d))
-    return src_dirs
+project_a_src = os.path.join(root_dir, project_name, "src")
+top_files = []
+for dirpath, dirnames, filenames in os.walk(project_a_src):
+    dirnames[:] = [d for d in dirnames if d.lower() != ".svn"]
+    for filename in filenames:
+        if filename.endswith(extensions):
+            top_files.append(os.path.abspath(os.path.join(dirpath, filename)))
 
 # --------------------------
-# 3️⃣ 收集所有 src 文件（全局去重依据）
+# 3️⃣ 收集 root 下所有文件（用于全局依赖去重）
 # --------------------------
-src_dirs = find_src_dirs(root_dir)
-all_files = []
+all_root_files = []
+for dirpath, dirnames, filenames in os.walk(root_dir):
+    dirnames[:] = [d for d in dirnames if d.lower() != ".svn"]
+    for filename in filenames:
+        if filename.endswith(extensions):
+            all_root_files.append(os.path.abspath(os.path.join(dirpath, filename)))
 
-for src in src_dirs:
-    for dirpath, _, filenames in os.walk(src):
-        for filename in filenames:
-            if filename.endswith(extensions):
-                all_files.append(os.path.abspath(os.path.join(dirpath, filename)))
-
-all_root_files = set(all_files)
-global_seen_in_root = set()  # 全局去重 root 下依赖对象
+all_root_files = set(all_root_files)
+global_seen_in_root = set()  # root 下依赖对象全局去重
 
 # --------------------------
-# 4️⃣ 文件解析函数（全局去重 & 系统依赖过滤）
+# 4️⃣ 文件解析函数
 # --------------------------
 def parse_file(full_path):
     includes_list = []
@@ -93,7 +91,6 @@ def parse_file(full_path):
                         else:
                             continue
 
-                    # root 下全局去重
                     if include_path in all_root_files:
                         if include_path not in global_seen_in_root:
                             global_seen_in_root.add(include_path)
@@ -107,12 +104,12 @@ def parse_file(full_path):
     return full_path, includes_list
 
 # --------------------------
-# 5️⃣ 多线程解析 src 文件夹
+# 5️⃣ 多线程解析顶层文件
 # --------------------------
-print(f"🔍 找到 {len(all_files)} 个源文件，开始解析...")
+print(f"🔍 找到 {len(top_files)} 个 ProjectA/src 文件，开始解析...")
 dependency_map = {}
 with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as executor:
-    for full_path, includes in tqdm(executor.map(parse_file, all_files), total=len(all_files), desc="解析文件进度"):
+    for full_path, includes in tqdm(executor.map(parse_file, top_files), total=len(top_files), desc="解析文件进度"):
         if includes:
             dependency_map[full_path] = includes
 
@@ -139,9 +136,9 @@ def build_tree_lines(file_path, prefix='', visited=None):
     return lines
 
 # --------------------------
-# 7️⃣ 写入 TXT（边生成边写入，低内存 + tqdm）
+# 7️⃣ 写入 TXT（边生成边写入）
 # --------------------------
-output_file = os.path.join(root_dir, "dependencies_tree.txt")
+output_file = os.path.join(root_dir, f"{project_name}_dependencies_tree.txt")
 
 # 预估总行数（用于进度条）
 def estimate_total_lines(dep_map):
@@ -177,4 +174,4 @@ with io.open(output_file, 'w', encoding='utf-8', buffering=1024*1024) as f:  # 1
         pbar.update(1)
     pbar.close()
 
-print(f"\n✅ 依赖树已输出到：{output_file}")
+print(f"\n✅ ProjectA 依赖树已输出到：{output_file}")
