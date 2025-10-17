@@ -6,6 +6,7 @@ extensions = ('.cpp', '.c', '.h', '.hpp')
 include_pattern = re.compile(r'#include\s+[<"](.+?)[>"]')
 
 # 文件直接依赖表
+# {文件绝对路径: [依赖对象绝对路径列表]}
 dependency_map = {}
 
 # --------------------------
@@ -21,7 +22,7 @@ def find_src_dirs(root):
     return src_dirs
 
 # --------------------------
-# 2️⃣ 分析 include（忽略注释，保留源码写法）
+# 2️⃣ 分析 include（去除注释，补全路径）
 # --------------------------
 def analyze_includes(src_dir):
     for dirpath, dirnames, filenames in os.walk(src_dir):
@@ -40,13 +41,14 @@ def analyze_includes(src_dir):
                     for line in f:
                         stripped = line.strip()
 
-                        # 多行注释
+                        # 多行注释处理
                         if in_block_comment:
                             if '*/' in stripped:
                                 in_block_comment = False
                                 stripped = stripped.split('*/',1)[1]
                             else:
                                 continue
+
                         if '/*' in stripped:
                             if '*/' in stripped:
                                 stripped = re.sub(r'/\*.*?\*/', '', stripped)
@@ -62,7 +64,24 @@ def analyze_includes(src_dir):
                         match = include_pattern.search(stripped)
                         if match:
                             include_file = match.group(1)
-                            includes.append(include_file)
+
+                            # 优先查找同目录
+                            candidate = os.path.join(dirpath, include_file)
+                            if os.path.exists(candidate):
+                                include_path = os.path.abspath(candidate)
+                            else:
+                                # 在整个根目录搜索
+                                include_path = None
+                                for root, subdirs, files in os.walk(root_dir):
+                                    subdirs[:] = [d for d in subdirs if d.lower() != ".svn"]
+                                    if os.path.basename(include_file) in files:
+                                        include_path = os.path.abspath(os.path.join(root, include_file))
+                                        break
+                                # 如果没找到，保留源码写法
+                                if include_path is None:
+                                    include_path = include_file
+
+                            includes.append(include_path)
 
                 if includes:
                     dependency_map[full_path] = includes
@@ -93,14 +112,10 @@ def build_tree(file_path, prefix='', visited=None):
 
         lines.append(prefix + branch + dep)
 
-        # 查找 dep 对应的顶层文件路径（basename 匹配）
-        matched_dep = None
-        for candidate in dependency_map:
-            if os.path.basename(dep) == os.path.basename(candidate):
-                matched_dep = candidate
-                break
-        if matched_dep:
-            lines.extend(build_tree(matched_dep, prefix + sub_prefix, visited.copy()))
+        # 递归：如果依赖对象在 dependency_map 中，继续生成子树
+        if dep in dependency_map:
+            lines.extend(build_tree(dep, prefix + sub_prefix, visited.copy()))
+
     return lines
 
 # --------------------------
