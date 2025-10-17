@@ -1,59 +1,72 @@
 import os
-import re
+import xml.etree.ElementTree as ET
 from collections import defaultdict
 
-def is_system_include(path):
-    # 过滤系统头文件
-    system_paths = [
-        r"\\Microsoft Visual Studio",
-        r"\\Windows Kits",
-        r"\\Program Files",
-        r"\\VC\\include",
-    ]
-    return any(p.lower() in path.lower() for p in system_paths)
+def parse_vcxproj(project_path, all_projects):
+    deps = {"libs": [], "includes": []}
+    try:
+        tree = ET.parse(project_path)
+        root = tree.getroot()
+        ns = {'msb': 'http://schemas.microsoft.com/developer/msbuild/2003'}
 
-def parse_showincludes(logfile):
-    include_pattern = re.compile(r"Note: including file:\s*(.*)")
-    deps = defaultdict(list)
-    stack = []
+        for item_def in root.findall(".//msb:ItemDefinitionGroup", ns):
+            # 链接库依赖
+            link = item_def.find("msb:Link", ns)
+            if link is not None:
+                libs = link.find("msb:AdditionalDependencies", ns)
+                if libs is not None and libs.text:
+                    deps["libs"].extend([l.strip() for l in libs.text.split(";") if l.strip()])
 
-    with open(logfile, encoding='utf-8', errors='ignore') as f:
-        for line in f:
-            match = include_pattern.search(line)
-            if not match:
-                continue
+            # 头文件依赖
+            cl = item_def.find("msb:ClCompile", ns)
+            if cl is not None:
+                inc = cl.find("msb:AdditionalIncludeDirectories", ns)
+                if inc is not None and inc.text:
+                    deps["includes"].extend([i.strip() for i in inc.text.split(";") if i.strip()])
 
-            raw_path = match.group(1).rstrip()
-            level = len(line) - len(line.lstrip())
-            path = os.path.normpath(raw_path)
+    except Exception as e:
+        print(f"[!] Failed to parse {project_path}: {e}")
 
-            # 如果是系统路径则忽略
-            if is_system_include(path):
-                continue
+    # 根据 .lib 名称判断是否依赖本地其他项目
+    local_projects = []
+    for lib in deps["libs"]:
+        name = os.path.splitext(os.path.basename(lib))[0]
+        for proj in all_projects:
+            if name.lower() == os.path.splitext(os.path.basename(proj))[0].lower():
+                local_projects.append(proj)
+                break
 
-            # 维护依赖层级栈
-            while stack and stack[-1][1] >= level:
-                stack.pop()
-
-            if stack:
-                parent = stack[-1][0]
-                deps[parent].append(path)
-
-            stack.append((path, level))
-
-    return deps
+    return local_projects, deps
 
 
-def write_csv(deps, output_file="dependencies.csv"):
-    with open(output_file, "w", encoding="utf-8") as f:
-        f.write("Source,DependsOn\n")
-        for src, incs in deps.items():
-            for inc in incs:
-                if (src.endswith(".cpp") or src.endswith(".h")) and (inc.endswith(".h") or inc.endswith(".cpp")):
-                    f.write(f"{src},{inc}\n")
-    print(f"导出完成: {output_file}")
+def build_dependency_tree(start_project, all_projects, visited=None):
+    if visited is None:
+        visited = set()
+
+    if start_project in visited:
+        return {}
+
+    visited.add(start_project)
+    deps_tree = defaultdict(dict)
+
+    sub_projects, _ = parse_vcxproj(start_project, all_projects)
+    for sub in sub_projects:
+        deps_tree[os.path.basename(start_project)][os.path.basename(sub)] = build_dependency_tree(sub, all_projects, visited)
+    return deps_tree
+
+
+def print_tree(tree, indent=0):
+    for k, v in tree.items():
+        print("  " * indent + f"📁 {k}")
+        print_tree(v, indent + 1)
 
 
 if __name__ == "__main__":
-    deps = parse_showincludes("includes.log")
-    write_csv(deps)
+    solution_dir = r"D:\YourSolution"
+    all_projects = [os.path.join(dp, f)
+                    for dp, _, files in os.walk(solution_dir)
+                    for f in files if f.endswith(".vcxproj")]
+
+    root_proj = r"D:\YourSolution\MainApp\MainApp.vcxproj"
+    tree = build_dependency_tree(root_proj, all_projects)
+    print_tree(tree)
