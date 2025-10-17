@@ -2,58 +2,77 @@ import os
 import re
 import csv
 
-# 配置根目录（请修改为你的实际路径）
+# 根目录路径（修改为你的项目根目录）
 root_dir = r"C:\path\to\your\root"
 
-# 只分析以下扩展名
+# 需要分析的扩展名
 extensions = ('.cpp', '.c', '.h', '.hpp')
 
-# 匹配 #include "xxx" 或 #include <xxx>
+# include 匹配模式
 include_pattern = re.compile(r'#include\s+[<"](.+?)[>"]')
 
-# 存储依赖关系
+# 保存依赖数据
 dependencies = []
 
-for dirpath, dirnames, filenames in os.walk(root_dir):
-    # 🚫 跳过 .svn 文件夹
-    dirnames[:] = [d for d in dirnames if d.lower() != ".svn"]
+def find_src_dirs(root):
+    """递归查找所有 src 文件夹的路径"""
+    src_dirs = []
+    for dirpath, dirnames, _ in os.walk(root):
+        # 跳过 .svn
+        dirnames[:] = [d for d in dirnames if d.lower() != ".svn"]
+        for d in dirnames:
+            if d.lower() == "src":
+                src_dirs.append(os.path.join(dirpath, d))
+    return src_dirs
 
-    for filename in filenames:
-        if filename.endswith(extensions):
-            full_path = os.path.abspath(os.path.join(dirpath, filename))
 
-            try:
-                with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    for line in f:
-                        match = include_pattern.search(line)
-                        if match:
-                            include_file = match.group(1)
-                            include_path = None
+def analyze_includes(src_dir):
+    """分析指定 src 目录下所有文件的 #include 依赖"""
+    for dirpath, dirnames, filenames in os.walk(src_dir):
+        dirnames[:] = [d for d in dirnames if d.lower() != ".svn"]
 
-                            # 优先查找同目录
-                            candidate = os.path.join(dirpath, include_file)
-                            if os.path.exists(candidate):
-                                include_path = os.path.abspath(candidate)
-                            else:
-                                # 在整个项目中查找（排除 .svn）
-                                for root, subdirs, files in os.walk(root_dir):
-                                    subdirs[:] = [d for d in subdirs if d.lower() != ".svn"]
-                                    if os.path.basename(include_file) in files:
-                                        include_path = os.path.abspath(os.path.join(root, include_file))
-                                        break
+        for filename in filenames:
+            if filename.endswith(extensions):
+                full_path = os.path.abspath(os.path.join(dirpath, filename))
+                try:
+                    with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        for line in f:
+                            match = include_pattern.search(line)
+                            if match:
+                                include_file = match.group(1)
+                                include_path = None
 
-                            dependencies.append((full_path, include_path or include_file))
+                                # 优先在同目录下查找
+                                candidate = os.path.join(dirpath, include_file)
+                                if os.path.exists(candidate):
+                                    include_path = os.path.abspath(candidate)
+                                else:
+                                    # 在整个根目录中查找匹配文件（排除 .svn）
+                                    for root, subdirs, files in os.walk(root_dir):
+                                        subdirs[:] = [d for d in subdirs if d.lower() != ".svn"]
+                                        if os.path.basename(include_file) in files:
+                                            include_path = os.path.abspath(os.path.join(root, include_file))
+                                            break
 
-            except PermissionError:
-                print(f"⚠️ 无法访问: {full_path}")
-            except Exception as e:
-                print(f"⚠️ 读取错误 {full_path}: {e}")
+                                dependencies.append((full_path, include_path or include_file))
+                except PermissionError:
+                    print(f"⚠️ 无法访问: {full_path}")
+                except Exception as e:
+                    print(f"⚠️ 读取错误 {full_path}: {e}")
 
-# 输出 CSV
+
+# 主流程
+src_dirs = find_src_dirs(root_dir)
+print(f"🔍 找到 {len(src_dirs)} 个 src 文件夹")
+for src in src_dirs:
+    print(f"  → 分析: {src}")
+    analyze_includes(src)
+
+# 输出结果
 output_file = os.path.join(root_dir, "dependencies.csv")
 with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
     writer = csv.writer(csvfile)
     writer.writerow(["source_file", "included_file"])
     writer.writerows(dependencies)
 
-print(f"✅ 依赖关系已输出到: {output_file}")
+print(f"\n✅ 依赖关系已输出到: {output_file}")
