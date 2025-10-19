@@ -8,7 +8,7 @@ import io
 # --------------------------
 # 配置
 # --------------------------
-root_dir = r"C:\path\to\your\root"  # 根目录
+root_dir = r"C:\path\to\your\root"  # 根目录，替换为真实路径
 project_name = "ProjectA"            # 只分析 ProjectA
 extensions = ('.cpp', '.c', '.h', '.hpp')
 include_pattern = re.compile(r'#include\s+[<"](.+?)[>"]')
@@ -48,28 +48,30 @@ all_root_files = set(all_root_files)
 global_seen_in_root = set()  # root 下依赖对象全局去重
 
 # --------------------------
-# 4️⃣ 文件解析函数
+# 4️⃣ 文件解析函数（解析一个文件的直接 include）
+#     返回 (full_path, [include_abs_path1, include_abs_path2, ...])
 # --------------------------
-def parse_file(full_path):
+def parse_file_once(full_path):
     includes_list = []
     try:
         with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
             in_block_comment = False
             for line in f:
                 stripped = line.strip()
-                # 多行注释
+                # 多行注释处理
                 if in_block_comment:
                     if '*/' in stripped:
                         in_block_comment = False
-                        stripped = stripped.split('*/',1)[1]
+                        stripped = stripped.split('*/', 1)[1]
                     else:
                         continue
                 if '/*' in stripped:
                     if '*/' in stripped:
+                        # 行内多行注释
                         stripped = re.sub(r'/\*.*?\*/', '', stripped)
                     else:
                         in_block_comment = True
-                        stripped = stripped.split('/*',1)[0]
+                        stripped = stripped.split('/*', 1)[0]
                 # 单行注释
                 stripped = re.sub(r'//.*', '', stripped).strip()
                 if not stripped:
@@ -78,24 +80,35 @@ def parse_file(full_path):
                 match = include_pattern.search(stripped)
                 if match:
                     include_file = match.group(1)
+
+                    # 过滤系统 / angle includes
                     if include_file.startswith('<') or include_file.startswith('/'):
                         continue
 
+                    # 优先同目录相对路径
                     candidate = os.path.join(os.path.dirname(full_path), include_file)
                     if os.path.exists(candidate):
                         include_path = os.path.abspath(candidate)
                     else:
                         basename = os.path.basename(include_file)
-                        if basename in file_index:
+                        # 使用索引查找同名文件，取第一个匹配
+                        if basename in file_index and file_index[basename]:
                             include_path = file_index[basename][0]
                         else:
+                            # 无法定位到项目内文件 -> 忽略（通常为第三方或系统）
                             continue
 
+                    # 全局去重规则（只对 root 下文件去重）
                     if include_path in all_root_files:
+                        # 如果这个 root 文件还没被全局记录过，则记录并保留
                         if include_path not in global_seen_in_root:
                             global_seen_in_root.add(include_path)
                             includes_list.append(include_path)
+                        else:
+                            # 已被全局记录过：跳过（全局去重）
+                            continue
                     else:
+                        # 非 root 文件（例如外部第三方），保留，不参与全局去重
                         includes_list.append(include_path)
 
     except Exception as e:
@@ -104,17 +117,45 @@ def parse_file(full_path):
     return full_path, includes_list
 
 # --------------------------
-# 5️⃣ 多线程解析顶层文件
+# 5️⃣ 递归并发解析：从 top_files 出发，递归解析所有可达文件
+#    逻辑：
+#      - pending = set(top_files)
+#      - while pending not empty:
+#           并发解析 pending 中所有文件 -> 得到各自 includes
+#           把解析结果加入 dependency_map
+#           对每个 include，如果是本地存在文件且未解析过 -> 加入 next_pending
+#           pending = next_pending
 # --------------------------
-print(f"🔍 找到 {len(top_files)} 个 ProjectA/src 文件，开始解析...")
-dependency_map = {}
+dependency_map = {}   # file_abs_path -> [dep_abs_path,...]
+parsed = set()        # 已经解析过（避免重复解析）
+
+# 首轮待解析：顶层文件（仅 ProjectA/src）
+pending = set(top_files)
+
+print(f"🔍 将递归解析 {len(pending)} 个顶层文件及其可达依赖（并发解析）...")
+
 with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as executor:
-    for full_path, includes in tqdm(executor.map(parse_file, top_files), total=len(top_files), desc="解析文件进度"):
-        if includes:
+    # 逐轮并发解析，直到没有新的待解析文件
+    while pending:
+        pending_list = list(pending)
+        pending = set()
+        # map 返回结果按迭代顺序，使用 tqdm 展示本轮进度
+        for full_path, includes in tqdm(executor.map(parse_file_once, pending_list),
+                                       total=len(pending_list), desc="解析轮"):
+            # 记录解析结果（保持顺序）
             dependency_map[full_path] = includes
+            parsed.add(full_path)
+
+            # 对每个 include，如果是本地存在文件，且还未解析过，加入下一轮
+            for dep in includes:
+                # dep 已是绝对路径定位到项目内文件（parse_file_once 已确保）
+                if isinstance(dep, str) and os.path.isabs(dep) and os.path.exists(dep):
+                    if dep not in parsed:
+                        pending.add(dep)
+        # 下一轮继续，直到 pending 空
 
 # --------------------------
-# 6️⃣ 树形生成（递归）
+# 6️⃣ 树形生成（递归）——现在 dependency_map 已包含可达文件，递归可展开到底层
 # --------------------------
 def build_tree_lines(file_path, prefix='', visited=None):
     if visited is None:
@@ -130,13 +171,14 @@ def build_tree_lines(file_path, prefix='', visited=None):
         branch = "└─ " if i == count - 1 else "├─ "
         sub_prefix = "   " if i == count - 1 else "│  "
         lines.append(prefix + branch + dep)
+        # 只有当 dep 被解析过并存在 dependency_map 时，递归展开其子依赖
         if dep in dependency_map:
             lines.extend(build_tree_lines(dep, prefix + sub_prefix, visited))
     visited.remove(file_path)
     return lines
 
 # --------------------------
-# 7️⃣ 写入 TXT（边生成边写入）
+# 7️⃣ 写入 TXT（边生成边写入，低内存 + tqdm）
 # --------------------------
 output_file = os.path.join(root_dir, f"{project_name}_dependencies_tree.txt")
 
@@ -163,7 +205,16 @@ total_lines = estimate_total_lines(dependency_map)
 
 with io.open(output_file, 'w', encoding='utf-8', buffering=1024*1024) as f:  # 1MB 缓冲
     pbar = tqdm(total=total_lines, desc="写入 TXT 进度")
-    for top_file in dependency_map:
+    for top_file in top_files:
+        # 只输出你关心的 ProjectA 顶层文件（按原始 top_files 列表）
+        if top_file not in dependency_map:
+            # 即使某些顶层文件没有依赖，也写出它自己
+            f.write(top_file + "\n")
+            pbar.update(1)
+            f.write("\n")
+            pbar.update(1)
+            continue
+
         f.write(top_file + "\n")
         pbar.update(1)
         tree_lines = build_tree_lines(top_file)
