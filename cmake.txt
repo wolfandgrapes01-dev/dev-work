@@ -8,10 +8,19 @@ find_package(pybind11 REQUIRED)
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 set(CMAKE_BUILD_TYPE Debug)  # 重要！
 
-# 禁用优化，启用调试信息
 if(MSVC)
-    add_compile_options(/Zi /Od)
-    add_link_options(/DEBUG)
+    # Debug 配置
+    target_compile_options(example PRIVATE
+        $<$<CONFIG:Debug>:/Zi /Od>
+    )
+    target_link_options(example PRIVATE
+        $<$<CONFIG:Debug>:/DEBUG>
+    )
+
+    # Release 配置
+    target_compile_options(example PRIVATE
+        $<$<CONFIG:Release>:/O2>
+    )
 endif()
 
 # 生成 Pybind 模块（注意 MODULE）
@@ -21,6 +30,8 @@ pybind11_add_module(example example.cpp)
 set_target_properties(example PROPERTIES
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/cpp_module/build"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/cpp_module/build"
+		COMPILE_PDB_NAME "example"
+    COMPILE_PDB_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}/cpp_module/build"
 )
 
 # 链接选项，确保 PDB 输出
