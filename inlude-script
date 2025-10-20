@@ -8,13 +8,13 @@ import io
 # --------------------------
 # 設定
 # --------------------------
-root_dir = r"C:\path\to\your\root"  # ルートディレクトリ（実パスに差し替えてください）
-project_name = "ProjectA"            # 解析対象プロジェクト
+root_dir = r"C:\path\to\your\root"  # ルートディレクトリ
+project_name = "ProjectA"            # 分析対象プロジェクト
 extensions = ('.cpp', '.c', '.h', '.hpp')
 include_pattern = re.compile(r'#include\s+[<"](.+?)[>"]')
 
 # --------------------------
-# 1️⃣ ファイルインデックス作成（root 下の全ファイルを登録）
+# 1️⃣ ファイルインデックスの構築（root 以下の全ファイルを対象）
 # --------------------------
 file_index = defaultdict(list)
 for dirpath, dirnames, filenames in os.walk(root_dir):
@@ -24,7 +24,7 @@ for dirpath, dirnames, filenames in os.walk(root_dir):
             file_index[filename].append(os.path.abspath(os.path.join(dirpath, filename)))
 
 # --------------------------
-# 2️⃣ ProjectA/src 下の解析対象ファイルを収集（トップレベル）
+# 2️⃣ ProjectA/src のトップレベル解析対象を収集
 # --------------------------
 project_a_src = os.path.join(root_dir, project_name, "src")
 top_files = []
@@ -35,29 +35,29 @@ for dirpath, dirnames, filenames in os.walk(project_a_src):
             top_files.append(os.path.abspath(os.path.join(dirpath, filename)))
 
 # --------------------------
-# 3️⃣ root 下の全ファイル集合（グローバル重複除去用）
+# 3️⃣ root 下の全ファイルを収集（重複除去用）
 # --------------------------
-all_root_files = set()
+all_root_files = []
 for dirpath, dirnames, filenames in os.walk(root_dir):
     dirnames[:] = [d for d in dirnames if d.lower() != ".svn"]
     for filename in filenames:
         if filename.endswith(extensions):
-            all_root_files.add(os.path.abspath(os.path.join(dirpath, filename)))
+            all_root_files.append(os.path.abspath(os.path.join(dirpath, filename)))
 
-global_seen_in_root = set()  # root 下の依存ファイルをグローバルに一度だけ採用するためのセット
+all_root_files = set(all_root_files)
+global_seen_in_root = set()  # root 下依存オブジェクトの重複除去
 
 # --------------------------
-# 4️⃣ ファイル解析関数（1ファイル分の直接 include を抽出）
-#    - .h に対して同名 .cpp を補完して includes に追加する（まだ未解析なら次ラウンドで処理）
+# 4️⃣ ファイル解析関数
 # --------------------------
-def parse_file_once(full_path):
+def parse_file(full_path):
     includes_list = []
     try:
         with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
             in_block_comment = False
             for line in f:
                 stripped = line.strip()
-                # ブロックコメント内かどうかの処理
+                # ブロックコメントの処理
                 if in_block_comment:
                     if '*/' in stripped:
                         in_block_comment = False
@@ -70,60 +70,45 @@ def parse_file_once(full_path):
                     else:
                         in_block_comment = True
                         stripped = stripped.split('/*', 1)[0]
-                # 行コメント除去
+                # 一行コメントの除去
                 stripped = re.sub(r'//.*', '', stripped).strip()
                 if not stripped:
                     continue
 
                 match = include_pattern.search(stripped)
-                if not match:
-                    continue
-                include_file = match.group(1)
-
-                # システムヘッダや絶対パスの include は無視
-                if include_file.startswith('<') or include_file.startswith('/'):
-                    continue
-
-                # 同ディレクトリ優先で絶対パス候補を作る
-                candidate = os.path.join(os.path.dirname(full_path), include_file)
-                if os.path.exists(candidate):
-                    include_path = os.path.abspath(candidate)
-                else:
-                    basename = os.path.basename(include_file)
-                    if basename in file_index and file_index[basename]:
-                        include_path = file_index[basename][0]
-                    else:
-                        # プロジェクト内で見つからない場合は無視（外部ライブラリ等）
+                if match:
+                    include_file = match.group(1)
+                    if include_file.startswith('<') or include_file.startswith('/'):
                         continue
 
-                # root 内ファイルについてはグローバル一度だけ採用するルール
-                if include_path in all_root_files:
-                    if include_path not in global_seen_in_root:
-                        global_seen_in_root.add(include_path)
+                    candidate = os.path.join(os.path.dirname(full_path), include_file)
+                    if os.path.exists(candidate):
+                        include_path = os.path.abspath(candidate)
+                    else:
+                        basename = os.path.basename(include_file)
+                        if basename in file_index:
+                            include_path = file_index[basename][0]
+                        else:
+                            continue
+
+                    if include_path in all_root_files:
+                        if include_path not in global_seen_in_root:
+                            global_seen_in_root.add(include_path)
+                            includes_list.append(include_path)
+                    else:
                         includes_list.append(include_path)
-                    else:
-                        # 既にグローバルで見たファイルは重複としてスキップ
-                        continue
-                else:
-                    # root 外のファイルはそのまま追加（重複排除の対象外）
-                    includes_list.append(include_path)
 
-        # .h/.hpp に対して同名の .cpp を補完する（あれば追加）
+        # 🔹 .h/.hpp に対して同名の .cpp を補完する（同ディレクトリ内のみ検索）
         if full_path.endswith(('.h', '.hpp')):
             base = os.path.splitext(os.path.basename(full_path))[0]
-            cpp_name = base + ".cpp"
-            if cpp_name in file_index and file_index[cpp_name]:
-                cpp_path = file_index[cpp_name][0]
-                # cpp_path が root 内でまだグローバル採用されていなければ採用して includes に追加
+            same_dir_cpp = os.path.join(os.path.dirname(full_path), base + ".cpp")
+            if os.path.exists(same_dir_cpp):
+                cpp_path = os.path.abspath(same_dir_cpp)
                 if cpp_path in all_root_files:
                     if cpp_path not in global_seen_in_root:
                         global_seen_in_root.add(cpp_path)
                         includes_list.append(cpp_path)
-                    else:
-                        # 既にグローバルで採用済み -> スキップ
-                        pass
                 else:
-                    # root 外の cpp（稀）も追加
                     includes_list.append(cpp_path)
 
     except Exception as e:
@@ -132,38 +117,17 @@ def parse_file_once(full_path):
     return full_path, includes_list
 
 # --------------------------
-# 5️⃣ 再帰的に並列解析するループ
-#    - pending: 今回解析すべきファイル集合（初回は top_files）
-#    - parsed: 既に解析済みのファイル
-#    - next_pending に新しく発見した未解析ファイルを入れて次ラウンドへ
+# 5️⃣ トップレベルファイルの並列解析
 # --------------------------
+print(f"🔍 {len(top_files)} 個の ProjectA/src ファイルを検出、解析開始...")
 dependency_map = {}
-parsed = set()
-pending = set(top_files)
-
-print(f"🔍 ProjectA/src のトップレベル {len(top_files)} 個から再帰解析を開始します...")
-
 with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as executor:
-    round_idx = 0
-    while pending:
-        round_idx += 1
-        pending_list = list(pending)
-        pending = set()
-        desc = f"解析ラウンド {round_idx} ({len(pending_list)} 件)"
-        for full_path, includes in tqdm(executor.map(parse_file_once, pending_list), total=len(pending_list), desc=desc):
-            # dependency_map に結果を入れる（上書きしても問題ない）
+    for full_path, includes in tqdm(executor.map(parse_file, top_files), total=len(top_files), desc="解析進捗"):
+        if includes:
             dependency_map[full_path] = includes
-            parsed.add(full_path)
-
-            # includes に含まれるファイルがプロジェクト内でまだ解析されていなければ次ラウンドに追加
-            for dep in includes:
-                if isinstance(dep, str) and os.path.isabs(dep) and os.path.exists(dep):
-                    if dep not in parsed:
-                        pending.add(dep)
-        # 次ラウンドへ（pending が空になるまで続く）
 
 # --------------------------
-# 6️⃣ ツリー生成（依存関係テーブルは完全にそろっているため、再帰で最底層まで展開できる）
+# 6️⃣ 再帰的ツリー構築
 # --------------------------
 def build_tree_lines(file_path, prefix='', visited=None):
     if visited is None:
@@ -185,11 +149,12 @@ def build_tree_lines(file_path, prefix='', visited=None):
     return lines
 
 # --------------------------
-# 7️⃣ TXT 書き出し（生成しながら書き込み、プログレス表示）
+# 7️⃣ TXT ファイル書き込み（進捗表示付き）
 # --------------------------
 output_file = os.path.join(root_dir, f"{project_name}_dependencies_tree.txt")
 
-def estimate_total_lines(dep_map, roots):
+# 総行数見積り
+def estimate_total_lines(dep_map):
     total = 0
     def count_lines(file_path, visited=None):
         nonlocal total
@@ -203,28 +168,23 @@ def estimate_total_lines(dep_map, roots):
         for dep in dep_map.get(file_path, []):
             count_lines(dep, visited)
         visited.remove(file_path)
-    for f in roots:
-        if f in dep_map:
-            count_lines(f)
-        else:
-            total += 1  # 依存無しのトップファイルも1行とみなす
+    for f in dep_map:
+        count_lines(f)
     return total
 
-total_lines = estimate_total_lines(dependency_map, top_files)
+total_lines = estimate_total_lines(dependency_map)
 
-with io.open(output_file, 'w', encoding='utf-8', buffering=1024*1024) as f:
-    pbar = tqdm(total=total_lines, desc="TXT 書き込み進行中")
-    for top_file in top_files:
-        # トップファイルは top_files の順で出力（解析結果がなくても出力）
+with io.open(output_file, 'w', encoding='utf-8', buffering=1024*1024) as f:  # 1MB バッファ
+    pbar = tqdm(total=total_lines, desc="TXT 書き込み進捗")
+    for top_file in dependency_map:
         f.write(top_file + "\n")
         pbar.update(1)
-        if top_file in dependency_map:
-            tree_lines = build_tree_lines(top_file)
-            for line in tree_lines:
-                f.write(line + "\n")
-                pbar.update(1)
+        tree_lines = build_tree_lines(top_file)
+        for line in tree_lines:
+            f.write(line + "\n")
+            pbar.update(1)
         f.write("\n")
         pbar.update(1)
     pbar.close()
 
-print(f"\n✅ {project_name} の依存ツリーを完全に出力しました：{output_file}")
+print(f"\n✅ ProjectA の依存ツリーを出力完了：{output_file}")
