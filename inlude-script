@@ -2,19 +2,18 @@ import os
 import re
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from tqdm import tqdm
 import io
 
 # --------------------------
 # 設定
 # --------------------------
-root_dir = r"C:\path\to\your\root"  # ルートディレクトリ
-project_name = "ProjectA"            # 分析対象プロジェクト
+root_dir = r"C:\path\to\your\root"  # 根目录
+project_name = "ProjectA"            # 只分析 ProjectA
 extensions = ('.cpp', '.c', '.h', '.hpp')
 include_pattern = re.compile(r'#include\s+[<"](.+?)[>"]')
 
 # --------------------------
-# 1️⃣ ファイルインデックス構築
+# 1️⃣ 构建文件索引（root 下所有项目文件，用于跨项目查找）
 # --------------------------
 file_index = defaultdict(list)
 for dirpath, dirnames, filenames in os.walk(root_dir):
@@ -24,7 +23,7 @@ for dirpath, dirnames, filenames in os.walk(root_dir):
             file_index[filename].append(os.path.abspath(os.path.join(dirpath, filename)))
 
 # --------------------------
-# 2️⃣ ProjectA/src トップレベル収集
+# 2️⃣ 收集 ProjectA/src 顶层分析对象
 # --------------------------
 project_a_src = os.path.join(root_dir, project_name, "src")
 top_files = []
@@ -35,7 +34,7 @@ for dirpath, dirnames, filenames in os.walk(project_a_src):
             top_files.append(os.path.abspath(os.path.join(dirpath, filename)))
 
 # --------------------------
-# 3️⃣ root 下全ファイル収集（重複除去用）
+# 3️⃣ 收集 root 下所有文件（用于全局依赖去重）
 # --------------------------
 all_root_files = []
 for dirpath, dirnames, filenames in os.walk(root_dir):
@@ -44,11 +43,12 @@ for dirpath, dirnames, filenames in os.walk(root_dir):
         if filename.endswith(extensions):
             all_root_files.append(os.path.abspath(os.path.join(dirpath, filename)))
 all_root_files = set(all_root_files)
-global_seen_in_root = set()  # root 下依存オブジェクト重複除去
 
 # --------------------------
-# 4️⃣ ファイル解析
+# 4️⃣ 文件解析函数
 # --------------------------
+global_seen_in_root = set()  # root 下依赖对象全局去重
+
 def parse_file(full_path):
     includes_list = []
     try:
@@ -56,10 +56,11 @@ def parse_file(full_path):
             in_block_comment = False
             for line in f:
                 stripped = line.strip()
+                # 多行注释
                 if in_block_comment:
                     if '*/' in stripped:
                         in_block_comment = False
-                        stripped = stripped.split('*/', 1)[1]
+                        stripped = stripped.split('*/',1)[1]
                     else:
                         continue
                 if '/*' in stripped:
@@ -67,7 +68,8 @@ def parse_file(full_path):
                         stripped = re.sub(r'/\*.*?\*/', '', stripped)
                     else:
                         in_block_comment = True
-                        stripped = stripped.split('/*', 1)[0]
+                        stripped = stripped.split('/*',1)[0]
+                # 单行注释
                 stripped = re.sub(r'//.*', '', stripped).strip()
                 if not stripped:
                     continue
@@ -84,7 +86,17 @@ def parse_file(full_path):
                     else:
                         basename = os.path.basename(include_file)
                         if basename in file_index:
-                            include_path = file_index[basename][0]
+                            # 仅同名 cpp 补全在同目录
+                            if basename.endswith(('.cpp','.c')):
+                                dir_of_header = os.path.dirname(full_path)
+                                for path_candidate in file_index[basename]:
+                                    if os.path.dirname(path_candidate) == dir_of_header:
+                                        include_path = path_candidate
+                                        break
+                                else:
+                                    continue
+                            else:
+                                include_path = file_index[basename][0]
                         else:
                             continue
 
@@ -95,68 +107,32 @@ def parse_file(full_path):
                     else:
                         includes_list.append(include_path)
 
-        # 🔹 同ディレクトリ内の .cpp 補完
-        if full_path.endswith(('.h', '.hpp')):
-            base = os.path.splitext(os.path.basename(full_path))[0]
-            same_dir_cpp = os.path.join(os.path.dirname(full_path), base + ".cpp")
-            if os.path.exists(same_dir_cpp):
-                cpp_path = os.path.abspath(same_dir_cpp)
-                if cpp_path in all_root_files:
-                    if cpp_path not in global_seen_in_root:
-                        global_seen_in_root.add(cpp_path)
-                        includes_list.append(cpp_path)
-                else:
-                    includes_list.append(cpp_path)
-
     except Exception as e:
-        print(f"⚠️ 読み取り失敗: {full_path} - {e}")
+        print(f"⚠️ 读取失败: {full_path} - {e}")
 
     return full_path, includes_list
 
 # --------------------------
-# 5️⃣ 並列解析トップレベル
+# 5️⃣ 多线程解析顶层文件（不显示进度条）
 # --------------------------
-print(f"🔍 {len(top_files)} 個の ProjectA/src ファイルを検出、解析開始...")
 dependency_map = {}
 with ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as executor:
-    for full_path, includes in tqdm(executor.map(parse_file, top_files), total=len(top_files), desc="解析進捗"):
+    for full_path, includes in executor.map(parse_file, top_files):
         if includes:
             dependency_map[full_path] = includes
 
-# 🔹 追加: 頭ファイルの完全再帰
-def recursive_parse_headers(file_path, seen=None):
-    if seen is None:
-        seen = set()
-    if file_path in seen:
-        return
-    seen.add(file_path)
-
-    deps = dependency_map.get(file_path, [])
-    new_deps = []
-    for dep in deps:
-        if dep.endswith(('.h', '.hpp')):
-            if dep not in dependency_map:
-                _, sub_includes = parse_file(dep)
-                if sub_includes:
-                    dependency_map[dep] = sub_includes
-            new_deps.extend(dependency_map.get(dep, []))
-    for dep in new_deps:
-        if dep.endswith(('.h', '.hpp')):
-            recursive_parse_headers(dep, seen)
-
-for top_file in list(dependency_map.keys()):
-    if top_file.endswith(('.h', '.hpp')):
-        recursive_parse_headers(top_file)
-
 # --------------------------
-# 6️⃣ ツリー構築
+# 6️⃣ 树形生成（递归，root 下依赖全局去重）
 # --------------------------
-def build_tree_lines(file_path, prefix='', visited=None):
-    if visited is None:
-        visited = set()
-    if file_path in visited:
+def build_tree_lines(file_path, prefix='', visited_local=None, visited_global=None):
+    if visited_local is None:
+        visited_local = set()
+    if visited_global is None:
+        visited_global = set()
+
+    if file_path in visited_local:
         return [prefix + "(循環依存)"]
-    visited.add(file_path)
+    visited_local.add(file_path)
 
     lines = []
     deps = dependency_map.get(file_path, [])
@@ -164,48 +140,32 @@ def build_tree_lines(file_path, prefix='', visited=None):
     for i, dep in enumerate(deps):
         branch = "└─ " if i == count - 1 else "├─ "
         sub_prefix = "   " if i == count - 1 else "│  "
+
+        # root 下依赖全局去重
+        if dep in all_root_files:
+            if dep in visited_global:
+                continue
+            visited_global.add(dep)
+
         lines.append(prefix + branch + dep)
         if dep in dependency_map:
-            lines.extend(build_tree_lines(dep, prefix + sub_prefix, visited))
-    visited.remove(file_path)
+            lines.extend(build_tree_lines(dep, prefix + sub_prefix,
+                                          visited_local.copy(),
+                                          visited_global))
+    visited_local.remove(file_path)
     return lines
 
 # --------------------------
-# 7️⃣ TXT 書き込み
+# 7️⃣ 写入 TXT（边生成边写入，不显示进度条）
 # --------------------------
 output_file = os.path.join(root_dir, f"{project_name}_dependencies_tree.txt")
 
-def estimate_total_lines(dep_map):
-    total = 0
-    def count_lines(file_path, visited=None):
-        nonlocal total
-        if visited is None:
-            visited = set()
-        if file_path in visited:
-            total += 1
-            return
-        visited.add(file_path)
-        total += 1
-        for dep in dep_map.get(file_path, []):
-            count_lines(dep, visited)
-        visited.remove(file_path)
-    for f in dep_map:
-        count_lines(f)
-    return total
-
-total_lines = estimate_total_lines(dependency_map)
-
-with io.open(output_file, 'w', encoding='utf-8', buffering=1024*1024) as f:
-    pbar = tqdm(total=total_lines, desc="TXT 書き込み進捗")
+with io.open(output_file, 'w', encoding='utf-8', buffering=1024*1024) as f:  # 1MB 缓冲
     for top_file in dependency_map:
         f.write(top_file + "\n")
-        pbar.update(1)
         tree_lines = build_tree_lines(top_file)
         for line in tree_lines:
             f.write(line + "\n")
-            pbar.update(1)
         f.write("\n")
-        pbar.update(1)
-    pbar.close()
 
-print(f"\n✅ ProjectA の依存ツリーを出力完了：{output_file}")
+print(f"\n✅ {project_name} 依赖树已输出到：{output_file}")
