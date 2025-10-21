@@ -4,13 +4,10 @@ pip install pybind11-stubgen
 # 生成 stub 文件
 add_custom_command(
     TARGET pysharedlib PRE_BUILD
-    COMMAND ${CMAKE_COMMAND} -E echo "Cleaning output directory: ${OUTPUT_DIR}"
     COMMAND ${CMAKE_COMMAND} -E rm -rf "${OUTPUT_DIR}"
     COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
-    COMMENT "Cleaning old files before building pysharedlib"
 
-    TARGET example POST_BUILD
-    COMMAND ${Python_EXECUTABLE} -m pybind11_stubgen $<TARGET_FILE:example>
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    COMMENT "Generating .pyi stub for example.pyd"
+    TARGET pyshairedlib POST_BUILD
+    COMMAND ${Python_EXECUTABLE} -m pybind11_stubgen $<TARGET_FILE:pysharedlib>
+    WORKING_DIRECTORY ${OUTPUT_DIR}
 )
