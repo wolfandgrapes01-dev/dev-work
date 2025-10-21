@@ -1,0 +1,7 @@
+# 生成 stub 文件
+add_custom_command(
+    TARGET example POST_BUILD
+    COMMAND ${Python_EXECUTABLE} -m pybind11_stubgen $<TARGET_FILE:example>
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMENT "Generating .pyi stub for example.pyd"
+)
