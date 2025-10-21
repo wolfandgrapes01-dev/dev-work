@@ -1,0 +1,43 @@
+#include <pybind11/pybind11.h>
+namespace py = pybind11;
+
+// 创建轻量 wrapper 类型
+struct MyIntWrapper {
+    int value;
+    MyIntWrapper(int v) : value(v) {}
+};
+
+struct MyOtherIntWrapper {
+    int value;
+    MyOtherIntWrapper(int v) : value(v) {}
+};
+
+PYBIND11_MODULE(example, m) {
+    py::class_<MyIntWrapper>(m, "MyInt")
+        .def(py::init<int>())
+        .def_readwrite("value", &MyIntWrapper::value);
+
+    py::class_<MyOtherIntWrapper>(m, "MyOtherInt")
+        .def(py::init<int>())
+        .def_readwrite("value", &MyOtherIntWrapper::value);
+}
+
+
+
+from example import MyInt, MyOtherInt
+
+x = MyInt(10)
+y = MyOtherInt(10)
+
+print(type(x))  # <class 'example.MyInt'>
+print(type(y))  # <class 'example.MyOtherInt'>
+
+==========
+==========
+==========
+
+m.attr("MyInt") = py::int_();
+m.attr("MyOtherInt") = py::int_();
+
+x: example.MyInt = 10
+y: example.MyOtherInt = 20
