@@ -1,0 +1,94 @@
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
+#include <afxwin.h>   // CPoint, CRect
+#include <afxstr.h>   // CString
+#include <afxtempl.h> // CArray
+
+namespace py = pybind11;
+
+// ==================== CString 转换 ====================
+inline std::string CStringToStdString(const CString& s) {
+    CT2A pszConvertedAnsiString(s);
+    return std::string(pszConvertedAnsiString);
+}
+
+inline CString StdStringToCString(const std::string& s) {
+    CA2T pszConvertedTChar(s.c_str());
+    return CString(pszConvertedTChar);
+}
+
+// ==================== 示例数据 ====================
+CPoint GetCenterPoint() { return CPoint(100, 200); }
+CRect GetRect() { return CRect(0, 0, 640, 480); }
+
+std::vector<int> GetArray() {
+    CArray<int, int> arr;
+    arr.Add(10); arr.Add(20); arr.Add(30);
+    return std::vector<int>(arr.GetData(), arr.GetData() + arr.GetCount());
+}
+
+CString GetHelloCString() {
+    return CString(_T("Hello from CString"));
+}
+
+// ==================== pybind11 模块 ====================
+PYBIND11_MODULE(pysharedlib, m) {
+    // CString
+    py::class_<CString>(m, "CString")
+        .def(py::init<>())
+        .def(py::init<const std::string&>(), [](const std::string& s) { return StdStringToCString(s); })
+        .def("__str__", [](const CString& s) { return CStringToStdString(s); });
+
+    // CPoint
+    py::class_<CPoint>(m, "CPoint")
+        .def(py::init<int, int>())
+        .def_readwrite("x", &CPoint::x)
+        .def_readwrite("y", &CPoint::y);
+
+    // CRect
+    py::class_<CRect>(m, "CRect")
+        .def(py::init<int, int, int, int>())
+        .def_readwrite("left", &CRect::left)
+        .def_readwrite("top", &CRect::top)
+        .def_readwrite("right", &CRect::right)
+        .def_readwrite("bottom", &CRect::bottom);
+
+    // 函数绑定
+    m.def("get_center_point", &GetCenterPoint);
+    m.def("get_rect", &GetRect);
+    m.def("get_array", &GetArray);
+    m.def("get_hello", &GetHelloCString);
+}
+
+
+
+
+
+
+cmake_minimum_required(VERSION 3.18)
+project(PyMFCExample LANGUAGES CXX)
+
+# 设置 MFC 使用共享 DLL
+set(CMAKE_MFC_FLAG 2) # 1=static, 2=shared DLL
+
+# pybind11 路径，如果用 submodule 或者 pip 安装的 pybind11
+find_package(pybind11 REQUIRED)
+
+# 输出目录
+set(OUTPUT_DIR "${CMAKE_BINARY_DIR}/build/release")
+
+# 清理输出目录，每次构建前
+add_custom_command(
+    TARGET pysharedlib PRE_BUILD
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${OUTPUT_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
+    COMMENT "Cleaning old files before building pysharedlib"
+)
+
+# 创建 pybind11 模块
+pybind11_add_module(pysharedlib binding.cpp)
+set_target_properties(pysharedlib PROPERTIES
+    PREFIX ""
+    SUFFIX ".pyd"
+    LIBRARY_OUTPUT_DIRECTORY "${OUTPUT_DIR}"
+)
