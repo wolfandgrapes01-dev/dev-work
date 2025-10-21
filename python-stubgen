@@ -1,3 +1,6 @@
+pip install pybind11-stubgen
+
+
 # 生成 stub 文件
 add_custom_command(
     TARGET example POST_BUILD
