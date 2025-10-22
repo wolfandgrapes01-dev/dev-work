@@ -1,54 +1,98 @@
 cmake_minimum_required(VERSION 4.0)
-project(MyATLModule LANGUAGES CXX)
+project(example LANGUAGES CXX)
 
-# 1️⃣ 找到 pybind11
-find_package(pybind11 REQUIRED)
-
-# 2️⃣ 自动收集你项目的所有 cpp/h
-file(GLOB_RECURSE ALL_PROJECT_CPP "MyProject/*.cpp")
-file(GLOB_RECURSE ALL_PROJECT_H   "MyProject/*.h")
-
-# 3️⃣ 生成 Python 模块
-pybind11_add_module(my_module
+# 1️⃣ Pybind 模块定义
+add_library(example MODULE
     binding.cpp
-    ${ALL_PROJECT_CPP}   # 自动加入全部 cpp
+    myclass.cpp
+    myclass.h
 )
 
-# 4️⃣ 包含头文件目录
-target_include_directories(my_module PRIVATE
-    ${CMAKE_SOURCE_DIR}/MyProject
-    "C:/Program Files (x86)/Microsoft Visual Studio/2022/Community/VC/Tools/ATLMFC/include"  # ATL/MFC
-)
+# 4️⃣ MSVC 环境配置
+if (MSVC)
+    message(STATUS "🔧 Detected MSVC toolchain, enabling MFC/ATL support...")
 
-# 5️⃣ 编译选项（ATL/MFC 必须宏）
-if(MSVC)
-    target_compile_definitions(my_module PRIVATE
-        _ATL_ATTRIBUTES
-        _ATL_CSTRING_EXPLICIT_CONSTRUCTORS
-        _UNICODE
+    # ------------------------------------------------------------------
+    # 【关键定义】必须让 MFC/ATL 在 DLL 模式下工作
+    # ------------------------------------------------------------------
+    target_compile_definitions(example PRIVATE
         UNICODE
-        _AFXDLL           # 使用 DLL 版本 MFC，如果需要静态可改 /MT
+        _UNICODE
+        _AFXDLL                         # 使用共享 MFC DLL（避免静态链接冲突）
+        _USRDLL
+        _WINDOWS
+        _WINDLL
+        _ATL_CSTRING_EXPLICIT_CONSTRUCTORS
+        VC_EXTRALEAN                    # 精简 MFC 头
+        WIN32_LEAN_AND_MEAN             # 精简 Windows 头
     )
 
-    target_compile_options(my_module PRIVATE /EHsc /Zc:__cplusplus)
-endif()
-
-# 6️⃣ 链接 ATL/MFC 库
-if(MSVC)
-    target_link_libraries(my_module PRIVATE
-        pybind11::module
-        atls.lib       # ATL 静态库
-        atlsd.lib      # ATL Debug 库
-        mfc140u.lib    # MFC Release
-        mfc140ud.lib   # MFC Debug
+    # ------------------------------------------------------------------
+    # 【MFC/ATL 必要的库链接】
+    # ------------------------------------------------------------------
+    # ⚠️ 不要只写 mfc140u.lib / atls.lib，必须补上依赖的系统库
+    target_link_libraries(example PRIVATE
+        mfc140u.lib
+        atls.lib
         ole32.lib
-        user32.lib
         oleaut32.lib
+        comdlg32.lib
+        user32.lib
+        gdi32.lib
+        advapi32.lib
+        shell32.lib
         uuid.lib
+        uxtheme.lib
+    )
+
+    # ------------------------------------------------------------------
+    # 【包含头文件路径】
+    # CMake 不会自动找到 ATL/MFC 的 include，需要我们帮它定位
+    # ------------------------------------------------------------------
+    file(GLOB VS_ATL_PATH
+        "C:/Program Files/Microsoft Visual Studio/2022/*/VC/Tools/MSVC/*/atlmfc/include"
+    )
+    if (VS_ATL_PATH)
+        message(STATUS "✅ Found ATL/MFC include: ${VS_ATL_PATH}")
+        target_include_directories(example PRIVATE ${VS_ATL_PATH})
+    else()
+        message(FATAL_ERROR "❌ Could not locate ATL/MFC include path. Check VS installation.")
+    endif()
+
+    # ------------------------------------------------------------------
+    # 【生成选项】
+    # ------------------------------------------------------------------
+    target_link_options(example PRIVATE
+        /SUBSYSTEM:WINDOWS     # Windows 模块（无 console）
+        /NOLOGO
     )
 endif()
 
-# 7️⃣ 输出目录
-set_target_properties(my_module PROPERTIES
-    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build
-)
+# 6️⃣ 如果有 shared.lib（自己的项目库）
+target_link_libraries(example PRIVATE mysharedlib)
+
+
+ーーーーーーーーーー
+COMMAND
+ーーーーーーーーーー
+# 32-bit
+cmake -G "Visual Studio 17 2022" -A Win32 -B build32
+cmake --build build32 --config Release
+
+# 64-bit
+cmake -G "Visual Studio 17 2022" -A x64 -B build64
+cmake --build build64 --config Release
+
+
+ーーーーーーーーーー
+ーーーーーーーーーー
+ーーーーーーーーーー
+C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\<版本号>\bin\Hostx64\x64\dumpbin.exe
+
+2.	搜索：
+🔍 “x64 Native Tools Command Prompt for VS 2022”
+或
+🔍 “x86 Native Tools Command Prompt for VS 2022”
+
+
+dumpbin /DEPENDENTS build64/example.pyd
