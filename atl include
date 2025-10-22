@@ -1,0 +1,15 @@
+# 让 CMake 找到 ATL
+if (MSVC)
+    set(ATL_INCLUDE_DIR "$ENV{VCToolsInstallDir}/atlmfc/include")
+    set(ATL_LIBRARY_DIR "$ENV{VCToolsInstallDir}/atlmfc/lib")
+
+    include_directories(${ATL_INCLUDE_DIR})
+    link_directories(${ATL_LIBRARY_DIR})
+
+    # 选择 Win32 还是 x64
+    if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+        link_directories("${ATL_LIBRARY_DIR}/x64")
+    else()
+        link_directories("${ATL_LIBRARY_DIR}/x86")
+    endif()
+endif()
