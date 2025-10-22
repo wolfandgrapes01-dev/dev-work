@@ -1,15 +1,54 @@
-# 让 CMake 找到 ATL
-if (MSVC)
-    set(ATL_INCLUDE_DIR "$ENV{VCToolsInstallDir}/atlmfc/include")
-    set(ATL_LIBRARY_DIR "$ENV{VCToolsInstallDir}/atlmfc/lib")
+cmake_minimum_required(VERSION 4.0)
+project(MyATLModule LANGUAGES CXX)
 
-    include_directories(${ATL_INCLUDE_DIR})
-    link_directories(${ATL_LIBRARY_DIR})
+# 1️⃣ 找到 pybind11
+find_package(pybind11 REQUIRED)
 
-    # 选择 Win32 还是 x64
-    if (CMAKE_SIZEOF_VOID_P EQUAL 8)
-        link_directories("${ATL_LIBRARY_DIR}/x64")
-    else()
-        link_directories("${ATL_LIBRARY_DIR}/x86")
-    endif()
+# 2️⃣ 自动收集你项目的所有 cpp/h
+file(GLOB_RECURSE ALL_PROJECT_CPP "MyProject/*.cpp")
+file(GLOB_RECURSE ALL_PROJECT_H   "MyProject/*.h")
+
+# 3️⃣ 生成 Python 模块
+pybind11_add_module(my_module
+    binding.cpp
+    ${ALL_PROJECT_CPP}   # 自动加入全部 cpp
+)
+
+# 4️⃣ 包含头文件目录
+target_include_directories(my_module PRIVATE
+    ${CMAKE_SOURCE_DIR}/MyProject
+    "C:/Program Files (x86)/Microsoft Visual Studio/2022/Community/VC/Tools/ATLMFC/include"  # ATL/MFC
+)
+
+# 5️⃣ 编译选项（ATL/MFC 必须宏）
+if(MSVC)
+    target_compile_definitions(my_module PRIVATE
+        _ATL_ATTRIBUTES
+        _ATL_CSTRING_EXPLICIT_CONSTRUCTORS
+        _UNICODE
+        UNICODE
+        _AFXDLL           # 使用 DLL 版本 MFC，如果需要静态可改 /MT
+    )
+
+    target_compile_options(my_module PRIVATE /EHsc /Zc:__cplusplus)
 endif()
+
+# 6️⃣ 链接 ATL/MFC 库
+if(MSVC)
+    target_link_libraries(my_module PRIVATE
+        pybind11::module
+        atls.lib       # ATL 静态库
+        atlsd.lib      # ATL Debug 库
+        mfc140u.lib    # MFC Release
+        mfc140ud.lib   # MFC Debug
+        ole32.lib
+        user32.lib
+        oleaut32.lib
+        uuid.lib
+    )
+endif()
+
+# 7️⃣ 输出目录
+set_target_properties(my_module PROPERTIES
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/build
+)
