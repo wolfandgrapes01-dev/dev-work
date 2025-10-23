@@ -1,0 +1,17 @@
+cmake_minimum_required(VERSION 3.20)
+project(MyProject)
+
+# 假设你的目标
+add_executable(my_target main.cpp)
+
+# 1️⃣ 定义删除旧文件/目录的自定义目标
+set(OUTPUT_DIR "${CMAKE_BINARY_DIR}/output")
+
+add_custom_target(clean_output
+    COMMAND ${CMAKE_COMMAND} -E rm -rf "${OUTPUT_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${OUTPUT_DIR}"
+    COMMENT "Cleaning old output files..."
+)
+
+# 2️⃣ 让你的构建目标依赖删除目标
+add_dependencies(my_target clean_output)
