@@ -96,3 +96,84 @@ C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\<版本号
 
 
 dumpbin /DEPENDENTS build64/example.pyd
+
+
+
+
+
+
+
+cmake_minimum_required(VERSION 3.21)
+project(example LANGUAGES CXX)
+
+add_library(example MODULE
+    binding.cpp
+    myclass.cpp
+    myclass.h
+)
+
+set_target_properties(example PROPERTIES
+    PREFIX ""
+    SUFFIX ".pyd"
+)
+
+target_compile_features(example PRIVATE cxx_std_17)
+
+if (MSVC)
+    message(STATUS "🔧 MSVC detected, enabling static MFC/ATL support")
+
+    # 检测架构
+    if (CMAKE_SIZEOF_VOID_P EQUAL 8)
+        set(ARCH_DIR "x64")
+    else()
+        set(ARCH_DIR "x86")
+    endif()
+
+    file(GLOB VS_ATL_PATH
+        "C:/Program Files/Microsoft Visual Studio/2022/*/VC/Tools/MSVC/*/atlmfc/include"
+    )
+    file(GLOB VS_ATL_LIB
+        "C:/Program Files/Microsoft Visual Studio/2022/*/VC/Tools/MSVC/*/atlmfc/lib/${ARCH_DIR}"
+    )
+
+    target_include_directories(example PRIVATE ${VS_ATL_PATH})
+    link_directories(${VS_ATL_LIB})
+
+    # ✅ 静态链接 MFC/ATL
+    target_compile_options(example PRIVATE
+        /MT            # 静态 CRT
+        /MP            # 多核编译
+    )
+
+    # ❌ 去掉 _AFXDLL，不要定义
+    target_compile_definitions(example PRIVATE
+        UNICODE
+        _UNICODE
+        _USRDLL
+        _WINDOWS
+        _WINDLL
+        _ATL_CSTRING_EXPLICIT_CONSTRUCTORS
+        VC_EXTRALEAN
+        WIN32_LEAN_AND_MEAN
+    )
+
+    # ✅ 链接静态库版本
+    target_link_libraries(example PRIVATE
+        mfcs140.lib     # 静态 MFC
+        atls.lib        # 静态 ATL
+        ole32.lib
+        oleaut32.lib
+        comdlg32.lib
+        user32.lib
+        gdi32.lib
+        advapi32.lib
+        shell32.lib
+        uuid.lib
+        uxtheme.lib
+    )
+
+    target_link_options(example PRIVATE
+        /SUBSYSTEM:WINDOWS
+        /NOLOGO
+    )
+endif()
