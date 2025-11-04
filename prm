@@ -1,15 +1,12 @@
 import re
 import json
 
-def parse_prm_file(path):
-    stack = []         # 存放每一层（list）
-    root = []          # 最顶层
-    current = root     # 当前层的 list
-    last_key = None    # 记录最近遇到的 Lx 名称
+def parse_prm_file_to_id_map(path):
+    results = []  # 保存所有 {"id": ..., "value": [...]} 的结果
+    stack = []
 
     with open(path, "r", encoding="utf-8") as f:
         for raw_line in f:
-            # 清理符号
             line = (raw_line.strip()
                     .replace("：", ":")
                     .replace("，", ",")
@@ -17,48 +14,40 @@ def parse_prm_file(path):
             if not line:
                 continue
 
-            # ---------- 新层定义 ----------
-            if line.startswith("L") and line[1:].isdigit():
-                last_key = line  # 暂时记下，等 "[" 时才真正入栈
+            # ---------- 层定义 ----------
+            if re.match(r"^L\d+$", line):
                 continue
-
-            # ---------- 层开始 ----------
-            if line == "[":
-                new_list = []
-                if stack:
-                    stack[-1].append({last_key: new_list})
-                else:
-                    root.append({last_key: new_list})
-                stack.append(new_list)
-                current = new_list
+            elif line == "[":
+                stack.append({"id": None, "value": None})
                 continue
-
-            # ---------- 层结束 ----------
-            if line == "]":
-                stack.pop()
-                current = stack[-1] if stack else root
+            elif line == "]":
+                top = stack.pop()
+                # ✅ 若该层为最内层且有完整数据
+                if top["id"] is not None and top["value"] is not None:
+                    results.append(top)
                 continue
 
             # ---------- 键值 ----------
-            if ":" in line:
+            if ":" in line and stack:
                 key, value = [x.strip() for x in line.split(":", 1)]
 
-                # 类型识别
-                if key.startswith("F"):  # 浮点数组
-                    floats = [float(v) for v in value.split(",") if v.strip()]
-                    current.append({key: floats})
-                elif "U" in key or key[0].isdigit():  # 整数
+                # 识别整数 ID
+                if re.match(r"^\d+U\d+$", key):
                     try:
-                        current.append({key: int(value)})
+                        id_val = int(value)
                     except ValueError:
-                        current.append({key: value})
-                else:
-                    current.append({key: value})
+                        id_val = value
+                    stack[-1]["id"] = id_val
 
-    return root
+                # 识别浮点数组
+                elif key.startswith("F"):
+                    floats = [float(v) for v in value.split(",") if v.strip()]
+                    stack[-1]["value"] = floats
+
+    return results
 
 
-# 示例执行
+# ---------- 示例 ----------
 if __name__ == "__main__":
     prm_text = """\
 L1
@@ -66,20 +55,17 @@ L1
   L2
   [
     4U1: 1
-    L3
-    [
-      F3: 0.1, 0.2, 0.3
-      L4
-      [
-        2U1: 55
-      ]
-    ]
+    F5: 0.1, 0.2, 0.3, 0.4, 0.5
+  ]
+  L3
+  [
+    4U1: 2
+    F5: 0.5, 0.6, 0.7, 0.8, 0.9
   ]
 ]"""
 
-    # 保存示例到文件
     with open("example.prm", "w", encoding="utf-8") as f:
         f.write(prm_text)
 
-    result = parse_prm_file("example.prm")
+    result = parse_prm_file_to_id_map("example.prm")
     print(json.dumps(result, indent=2, ensure_ascii=False))
