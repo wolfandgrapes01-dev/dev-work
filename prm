@@ -1,52 +1,85 @@
 import re
 import json
 
-def parse_prm_text(text: str):
-    # 替换全角符号
-    text = (
-        text.replace("：", ":")
-            .replace("，", ",")
-            .replace("　", " ")
-    )
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    
-    stack = []
-    root = {}
-    current = root
-    key_stack = []
-    
-    for line in lines:
-        if line.endswith('['):
-            key = line[:-1].strip()
-            new_dict = {}
-            current[key] = new_dict
-            stack.append(current)
-            key_stack.append(key)
-            current = new_dict
-        elif line == ']':
-            current = stack.pop()
-            key_stack.pop()
-        elif ':' in line:
-            key, value = [x.strip() for x in line.split(':', 1)]
-            # 处理逗号分隔的数字
-            if re.match(r"^[0-9\.\-,\s]+$", value):
-                parts = [float(v) for v in value.split(',') if v.strip()]
-                current[key] = parts
-            else:
-                current[key] = value
+def parse_prm_file(path):
+    stack = []         # 存放每一层（list）
+    root = []          # 最顶层
+    current = root     # 当前层的 list
+    last_key = None    # 记录最近遇到的 Lx 名称
+
+    with open(path, "r", encoding="utf-8") as f:
+        for raw_line in f:
+            # 清理符号
+            line = (raw_line.strip()
+                    .replace("：", ":")
+                    .replace("，", ",")
+                    .replace("　", " "))
+            if not line:
+                continue
+
+            # ---------- 新层定义 ----------
+            if line.startswith("L") and line[1:].isdigit():
+                last_key = line  # 暂时记下，等 "[" 时才真正入栈
+                continue
+
+            # ---------- 层开始 ----------
+            if line == "[":
+                new_list = []
+                if stack:
+                    stack[-1].append({last_key: new_list})
+                else:
+                    root.append({last_key: new_list})
+                stack.append(new_list)
+                current = new_list
+                continue
+
+            # ---------- 层结束 ----------
+            if line == "]":
+                stack.pop()
+                current = stack[-1] if stack else root
+                continue
+
+            # ---------- 键值 ----------
+            if ":" in line:
+                key, value = [x.strip() for x in line.split(":", 1)]
+
+                # 类型识别
+                if key.startswith("F"):  # 浮点数组
+                    floats = [float(v) for v in value.split(",") if v.strip()]
+                    current.append({key: floats})
+                elif "U" in key or key[0].isdigit():  # 整数
+                    try:
+                        current.append({key: int(value)})
+                    except ValueError:
+                        current.append({key: value})
+                else:
+                    current.append({key: value})
+
     return root
 
 
+# 示例执行
 if __name__ == "__main__":
     prm_text = """\
 L1
 [
-　L2
+  L2
+  [
+    4U1: 1
+    L3
     [
-　　4U1：000
-　　F5: 0.1，0.1，0.1，0.1，0.1
-　]
+      F3: 0.1, 0.2, 0.3
+      L4
+      [
+        2U1: 55
+      ]
+    ]
+  ]
 ]"""
-    
-    data = parse_prm_text(prm_text)
-    print(json.dumps(data, indent=2, ensure_ascii=False))
+
+    # 保存示例到文件
+    with open("example.prm", "w", encoding="utf-8") as f:
+        f.write(prm_text)
+
+    result = parse_prm_file("example.prm")
+    print(json.dumps(result, indent=2, ensure_ascii=False))
