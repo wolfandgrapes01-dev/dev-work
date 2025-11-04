@@ -1,8 +1,0 @@
-py::class_<ShMessageWriter>(m, "ShMessageWriter")
-    .def("get_message", [](ShMessageWriter& self) -> ShMessage& {
-        struct Hack : ShMessageWriter {
-            using ShMessageWriter::msg_;
-        };
-        return static_cast<Hack&>(self).msg_;
-    }, py::return_value_policy::reference_internal)
-    .def(py::self << std::string());
