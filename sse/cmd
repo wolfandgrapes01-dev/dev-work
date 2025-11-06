@@ -1,3 +1,6 @@
+opencv-python-headless
+
+opencv-python
 
 pip install gunicorn gevent
 
