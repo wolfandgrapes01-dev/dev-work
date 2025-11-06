@@ -1,44 +1,30 @@
-#include <windows.h>
+// MyWnd.h
+#pragma once
+#include <afxwin.h>
 #include <functional>
 #include <pybind11/pybind11.h>
+
 namespace py = pybind11;
 
 #define WM_RESPONSE (WM_USER + 100)
 
-std::function<void(int)> g_callback;
+class CMsgDlg : public CDialog  // 或 CDialogEx
+{
+public:
+    CMsgDlg() : CDialog(IDD_MYDIALOG) {}
 
-void register_callback(py::function f) {
-    g_callback = [f](int val){
-        py::gil_scoped_acquire acquire;
-        f(val);
-    };
-}
-
-LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    if (msg == WM_RESPONSE) {
-        if (g_callback) g_callback((int)wParam);
-        return 0;
+    // 注册 Python 回调
+    void registerCallback(py::function f) {
+        pyCallback = [f](int val){
+            py::gil_scoped_acquire gil;  // 获取 GIL
+            f(val);
+        };
     }
-    return DefWindowProc(hwnd, msg, wParam, lParam);
-}
 
-HWND create_hidden_window(HINSTANCE hInstance) {
-    const wchar_t CLASS_NAME[] = L"MyHiddenWindow";
-    WNDCLASS wc = {};
-    wc.lpfnWndProc = WndProc;
-    wc.hInstance = hInstance;
-    wc.lpszClassName = CLASS_NAME;
-    RegisterClass(&wc);
+protected:
+    std::function<void(int)> pyCallback;
 
-    HWND hwnd = CreateWindowEx(
-        0, CLASS_NAME, L"MyHiddenWindow", 0,
-        0, 0, 0, 0, NULL, NULL, hInstance, NULL
-    );
-    ShowWindow(hwnd, SW_HIDE);  // 隐藏
-    return hwnd;
-}
+    afx_msg LRESULT OnResponse(WPARAM wParam, LPARAM lParam);
 
-PYBIND11_MODULE(winmsg, m) {
-    m.def("create_window", &create_hidden_window);
-    m.def("register_callback", &register_callback);
-}
+    DECLARE_MESSAGE_MAP()
+};
