@@ -1,0 +1,27 @@
+#include <pybind11/pybind11.h>
+namespace py = pybind11;
+
+class Base {
+public:
+    virtual ~Base() = default;
+    virtual void foo() = 0;  // 纯虚函数
+};
+
+class PyBase : public Base {
+public:
+    using Base::Base;
+
+    void foo() override {
+        PYBIND11_OVERLOAD_PURE(
+            void,  // 返回类型
+            Base,  // 基类
+            foo    // 函数名
+        );
+    }
+};
+
+PYBIND11_MODULE(example, m) {
+    py::class_<Base, PyBase>(m, "Base")  // 绑定时使用 trampoline
+        .def(py::init<>())
+        .def("foo", &Base::foo);
+}
