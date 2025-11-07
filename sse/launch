@@ -1,0 +1,24 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Flask via Uvicorn",
+            "type": "python",
+            "request": "launch",
+            "program": "${workspaceFolder}/app_asgi.py",
+            "console": "integratedTerminal",
+            "args": [
+                "-m",
+                "uvicorn",
+                "app_asgi:app",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8000",
+                "--reload"
+            ],
+            "cwd": "${workspaceFolder}",
+            "justMyCode": true
+        }
+    ]
+}
