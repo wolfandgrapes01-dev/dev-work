@@ -1,56 +1,97 @@
 from flask import Flask, Response
-from flask_cors import CORS
-import cv2
-import time
 import threading
+import time
+import queue
+from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
 
-camera = cv2.VideoCapture(0)
-frame_lock = threading.Lock()
-latest_frame = None
 
-# 后台线程：持续读取摄像头
-def camera_thread():
-    global latest_frame
-    while True:
-        success, frame = camera.read()
-        if success:
-            with frame_lock:
-                latest_frame = frame
-        time.sleep(0.03)  # ~30fps
+# === 第一种：Event 推送 ===
+latest_message = None
+new_message_event = threading.Event()
 
-threading.Thread(target=camera_thread, daemon=True).start()
-
-# 提供视频流
-def generate_frames():
-    while True:
-        with frame_lock:
-            if latest_frame is None:
-                continue
-            ret, buffer = cv2.imencode('.jpg', latest_frame)
-        yield (b'--frame\r\n'
-               b'Content-Type: image/jpeg\r\n\r\n' + buffer.tobytes() + b'\r\n')
-        time.sleep(0.03)
-
-@app.route('/video')
-def video_feed():
-    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
-
-# SSE 流
-@app.route('/stream')
+@app.route("/stream")
 def stream():
-    def event_stream():
-        count = 0
+    """基于 threading.Event 的 SSE"""
+    def gen():
+        global latest_message
         while True:
-            yield f"data: Current timestamp: {time.time()}\n\n"
-            count += 1
-            if count % 5 == 0:
-                msg = f'{{"message": "Hello from Flask at {time.strftime("%H:%M:%S")}"}}'
-                yield f"event: greeting\ndata: {msg}\n\n"
-            time.sleep(1)
-    return Response(event_stream(), mimetype='text/event-stream')
+            new_message_event.wait()  # 阻塞等待事件
+            yield f"data: {latest_message}\n\n"
+            new_message_event.clear()
+    return Response(gen(), mimetype="text/event-stream")
 
-if __name__ == '__main__':
-    app.run(threaded=True, debug=True)
+
+def send_event_message(msg: str):
+    """通过 Event 推送消息"""
+    global latest_message
+    latest_message = msg
+    new_message_event.set()
+
+
+# === 第二种：Queue 推送 ===
+message_queue = queue.Queue()
+
+@app.route("/stream_queue")
+def stream_queue():
+    """基于 queue.Queue 的 SSE"""
+    def gen():
+        while True:
+            msg = message_queue.get()  # 阻塞等待新数据
+            yield f"data: {msg}\n\n"
+    return Response(gen(), mimetype="text/event-stream")
+
+
+def send_queue_message(msg: str):
+    """通过 Queue 推送消息"""
+    message_queue.put(msg)
+
+
+# === 模拟事件源 ===
+def external_event_source_event():
+    """测试 Event 推送"""
+    for i in range(5):
+        time.sleep(2)
+        msg = f"[Event] 数据 {i}"
+        send_event_message(msg)
+        print(f"[Event SENT] {msg}")
+
+
+def external_event_source_queue():
+    """测试 Queue 推送"""
+    for i in range(5):
+        time.sleep(2)
+        msg = f"[Queue] 数据 {i}"
+        send_queue_message(msg)
+        print(f"[Queue SENT] {msg}")
+
+
+@app.route("/ping_event")
+def ping_event():
+    """启动 Event 推送线程"""
+    external_event_source_event()
+    # threading.Thread(target=external_event_source_event, daemon=True).start()
+    return {"status": "event started"}
+
+
+@app.route("/ping_queue")
+def ping_queue():
+    """启动 Queue 推送线程"""
+    external_event_source_queue()
+    # threading.Thread(target=external_event_source_queue, daemon=True).start()
+    return {"status": "queue started"}
+
+
+@app.route("/req")
+def req():
+    return {"status": "ok"}
+
+threading.Thread(target=external_event_source_event, daemon=True).start()
+threading.Thread(target=external_event_source_queue, daemon=True).start()
+
+
+if __name__ == "__main__":
+    app.run(threaded=True)
+
