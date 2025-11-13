@@ -1,5 +1,18 @@
 import React, { useEffect, useState } from "react";
 
+// 定义事件数据类型
+interface FooEventData {
+  foo: number;
+  timestamp: number;
+}
+
+interface BarEventData {
+  bar: number;
+  timestamp: number;
+}
+
+
+
 const SSEDemo: React.FC = () => {
     const [messages, setMessages] = useState<string[]>([]);
 
@@ -13,15 +26,17 @@ const SSEDemo: React.FC = () => {
             setMessages((prev) => [...prev, `Received: ${e.data}`]);
         };
 
-        // 自定义事件（type='greeting'）
-        source.addEventListener("greeting", (e: MessageEvent) => {
-            try {
-                const data = JSON.parse(e.data);
-                setMessages((prev) => [...prev, `Greeting: ${data.message}`]);
-            } catch {
-                setMessages((prev) => [...prev, `Greeting (raw): ${e.data}`]);
-            }
-        });
+// 监听 fooEvent
+source.addEventListener("fooEvent", (e: MessageEvent) => {
+  const msg: FooEventData = JSON.parse(e.data);
+  console.log("fooEvent:", msg);
+});
+
+// 监听 barEvent
+source.addEventListener("barEvent", (e: MessageEvent) => {
+  const msg: BarEventData = JSON.parse(e.data);
+  console.log("barEvent:", msg);
+});
 
         // 连接关闭时打印信息
         source.onerror = (err) => {
