@@ -1,0 +1,40 @@
+from flask import Flask
+from request_parser import BadRequest, RequestParser as RP
+from response import success, error
+
+app = Flask(__name__)
+
+# 全局错误处理
+@app.errorhandler(BadRequest)
+def handle_bad_request(e: BadRequest):
+    return error(
+        message=e.message,
+        code=e.code
+    )
+
+@app.errorhandler(500)
+def handle_500(e):
+    return error(
+        message="Internal server error",
+        code=500
+    )
+
+# 示例接口
+@app.route("/api/data", methods=["POST"])
+def api_data():
+    data = RP.json()
+    token = RP.header("Authorization")
+    page = RP.query("page", default=1, type_=int)
+    page_size = RP.query("page_size", default=20, type_=int)
+
+    return success(
+        data={
+            "token": token,
+            "page": page,
+            "page_size": page_size,
+            "value": data.get("value")
+        }
+    )
+
+if __name__ == "__main__":
+    app.run(debug=True)
