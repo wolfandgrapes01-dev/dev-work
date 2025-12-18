@@ -1,0 +1,20 @@
+from flask import jsonify
+
+def success(data=None, message="ok", code=200):
+    return jsonify({
+        "success": True,
+        "message": message,
+        "data": data
+    }), code
+
+
+def error(message="error", code=400, error_code=None):
+    body = {
+        "success": False,
+        "message": message
+    }
+
+    if error_code is not None:
+        body["error_code"] = error_code
+
+    return jsonify(body), code
