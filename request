@@ -1,0 +1,56 @@
+from flask import request
+
+class BadRequest(Exception):
+    def __init__(self, message="Bad request", code=400):
+        self.message = message
+        self.code = code
+        super().__init__(message)
+
+
+class RequestParser:
+    @staticmethod
+    def json(required: bool = True) -> dict:
+        """
+        解析 JSON body
+        """
+        data = request.get_json(force=False, silent=True)
+
+        if data is None:
+            if required:
+                raise BadRequest("Invalid or missing JSON body", 400)
+            return {}
+
+        if not isinstance(data, dict):
+            raise BadRequest("JSON body must be an object", 400)
+
+        return data
+
+    @staticmethod
+    def header(name: str, required: bool = True) -> str | None:
+        """
+        解析 Header
+        """
+        value = request.headers.get(name)
+
+        if not value and required:
+            raise BadRequest(f"Missing header: {name}", 401)
+
+        return value
+
+    @staticmethod
+    def query(name: str, default=None, type_=None):
+        """
+        解析 Query 参数 (?page=1)
+        """
+        value = request.args.get(name, default)
+
+        if value is None:
+            return default
+
+        if type_:
+            try:
+                return type_(value)
+            except Exception:
+                raise BadRequest(f"Invalid query param: {name}", 400)
+
+        return value
