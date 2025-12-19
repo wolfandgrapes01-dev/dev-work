@@ -1,0 +1,48 @@
+import axios from "axios";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+
+type A = { /* 接口 A 的结构 */ }
+type B = { /* 接口 B 的结构 */ }
+type C = { /* 接口 C 的结构 */ }
+
+export default function Page() {
+  const [loading, setLoading] = useState(false);
+  const navigate = useNavigate();
+
+  const handleClick = async () => {
+    if (loading) return;     // 防止重复点击
+    setLoading(true);
+
+    try {
+      const [a, b, c] = await Promise.all([
+        axios.get<A>("/api/a"),
+        axios.get<B>("/api/b"),
+        axios.get<C>("/api/c"),
+      ]);
+
+      console.log(a.data, b.data, c.data);
+
+      // 🔥 所有接口成功 → 进行页面跳转
+      navigate("/next-page", {
+        state: {
+          a: a.data,
+          b: b.data,
+          c: c.data
+        }
+      });
+
+    } catch (err) {
+      console.error("接口失败：", err);
+      alert("有接口失败，请稍后重试");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <button onClick={handleClick} disabled={loading}>
+      {loading ? "请求中..." : "点击获取并跳转"}
+    </button>
+  );
+}
