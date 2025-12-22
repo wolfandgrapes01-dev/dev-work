@@ -59,3 +59,88 @@ const FixedDecimalLabel = forwardRef<FixedDecimalLabelRef, FixedDecimalLabelProp
 );
 
 export default FixedDecimalLabel;
+
+
+
+
+
+
+
+
+
+
+
+import {
+  forwardRef,
+  useImperativeHandle,
+  useState,
+  useEffect
+} from "react";
+
+export type FixedDecimalLabelRef = {
+  getValue: () => string;
+  setValue: (v: string) => void;
+};
+
+type Props = {
+  value?: string;           // 🔥 controlled
+  defaultValue?: string;    // 🔥 uncontrolled 初始值
+  format?: string;
+  onChange?: (v: string) => void;
+};
+
+const FixedDecimalLabel = forwardRef<FixedDecimalLabelRef, Props>(
+  ({ value, defaultValue = "", format, onChange }, ref) => {
+
+    // 是否受控
+    const isControlled = value !== undefined;
+
+    // 内部状态（仅 uncontrolled 用）
+    const [inner, setInner] = useState(defaultValue);
+
+    const realValue = isControlled ? value! : inner;
+
+    // 🔥 受控模式下，父 value 改变，组件自然重新渲染，不需额外 useEffect
+
+    function setValue(v: string) {
+      if (isControlled) {
+        // 受控 → 只能通知父组件
+        onChange?.(v);
+      } else {
+        // 非受控 → 内部改
+        setInner(v);
+        onChange?.(v);
+      }
+    }
+
+    useImperativeHandle(ref, () => ({
+      getValue: () => realValue,
+      setValue
+    }));
+
+    return (
+      <label>
+        {applyFormat(realValue, format)}
+      </label>
+    );
+  }
+);
+
+export default FixedDecimalLabel;
+
+
+// ======= 示例格式函数 ========
+function applyFormat(v: string, format?: string) {
+  if (!format) return v;
+
+  if (format === "U") return v.toUpperCase();
+
+  if (format.endsWith("f")) {
+    const n = Number(v);
+    if (isNaN(n)) return v;
+    const digits = Number(format[0]) || 0;
+    return n.toFixed(digits);
+  }
+
+  return v;
+}
