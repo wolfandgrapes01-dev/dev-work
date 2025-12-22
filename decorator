@@ -1,0 +1,33 @@
+def wait_socket(timeout=5):
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            fut = Future()
+
+            # 调用你的业务函数，必须返回一个 key
+            key = func(*args, **kwargs)
+
+            # 记录 future
+            pending[key] = fut
+
+            # 阻塞等待 socket 结果
+            return fut.result(timeout=timeout)
+
+        return wrapper
+    return decorator
+
+
+
+@app.post("/api/test")
+@wait_socket(timeout=5)
+def test():
+    key = "abc123"
+    send_socket(key)     # 发给外部进程
+    return key           # 只需要把 key 返回给装饰器
+
+
+
+
+def on_socket_message(key, data):
+    fut = pending.pop(key, None)
+    if fut:
+        fut.set_result(data)
