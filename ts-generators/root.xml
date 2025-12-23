@@ -1,0 +1,165 @@
+<root>
+
+  <!-- ************ 基础 UI ************ -->
+  <Section id="BASE_UI">
+    <StringDef>
+      <id>0x5000001</id>
+      <String>
+        <langId=0>确定</langId>
+        <langId=1>確定</langId=1>
+        <langId=2>OK</langId=2>
+        <langId=3>確認</langId=3>
+        <langId=4>확인</langId=4>
+      </String>
+    </StringDef>
+
+    <StringDef>
+      <id>0x5000002</id>
+      <String>
+        <langId=0>取消</langId>
+        <langId=1>取消</langId=1>
+        <langId=2>Cancel</langId=2>
+        <langId=3>キャンセル</langId=3>
+        <langId=4>취소</langId=4>
+      </String>
+    </StringDef>
+
+    <StringDef>
+      <id>0x5000003</id>
+      <String>
+        <langId=0>返回</langId>
+        <langId=1>返回</langId=1>
+        <langId=2>Back</langId=2>
+        <langId=3>戻る</langId=3>
+        <langId=4>뒤로</langId=4>
+      </String>
+    </StringDef>
+  </Section>
+
+
+  <!-- ************ 登录相关 ************ -->
+  <Section id="LOGIN">
+    <StringDef>
+      <id>0x5100001</id>
+      <String>
+        <langId=0>用户名</langId>
+        <langId=1>用戶名</langId=1>
+        <langId=2>Username</langId=2>
+        <langId=3>ユーザー名</langId=3>
+        <langId=4>사용자 이름</langId=4>
+      </String>
+    </StringDef>
+
+    <StringDef>
+      <id>0x5100002</id>
+      <String>
+        <langId=0>密码</langId>
+        <langId=1>密碼</langId=1>
+        <langId=2>Password</langId=2>
+        <langId=3>パスワード</langId=3>
+        <langId=4>비밀번호</langId=4>
+      </String>
+    </StringDef>
+
+    <StringDef>
+      <id>0x5100003</id>
+      <String>
+        <langId=0>登录</langId>
+        <langId=1>登入</langId=1>
+        <langId=2>Login</langId=2>
+        <langId=3>ログイン</langId=3>
+        <langId=4>로그인</langId=4>
+      </String>
+    </StringDef>
+
+    <!-- 少语言缺失情况（专门用来测试 robustness） -->
+    <StringDef>
+      <id>0x5100004</id>
+      <String>
+        <langId=0>记住密码</langId>
+        <langId=2>Remember me</langId=2>
+        <langId=3>記憶する</langId=3>
+      </String>
+    </StringDef>
+
+  </Section>
+
+
+  <!-- ************ 错误消息 ************ -->
+  <Section id="ERRORS">
+
+    <StringDef>
+      <id>0x5200001</id>
+      <String>
+        <langId=0>网络错误</langId>
+        <langId=1>網絡錯誤</langId=1>
+        <langId=2>Network Error</langId=2>
+        <langId=3>ネットワークエラー</langId=3>
+        <langId=4>네트워크 오류</langId=4>
+      </String>
+    </StringDef>
+
+    <StringDef>
+      <id>0x5200002</id>
+      <String>
+        <langId=0>服务器异常</langId>
+        <langId=1>伺服器異常</langId=1>
+        <langId=2>Server Error</langId=2>
+        <langId=3>サーバーエラー</langId=3>
+        <langId=4>서버 오류</langId=4>
+      </String>
+    </StringDef>
+
+    <StringDef>
+      <id>0x5200003</id>
+      <String>
+        <langId=0>未知错误</langId>
+        <langId=1>未知錯誤</langId=1>
+        <langId=2>Unknown Error</langId=2>
+        <langId=3>不明なエラー</langId=3>
+        <langId=4>알 수 없는 오류</langId=4>
+      </String>
+    </StringDef>
+
+  </Section>
+
+
+  <!-- ************ 系统菜单 ************ -->
+  <Section id="MENU">
+
+    <StringDef>
+      <id>0x5300001</id>
+      <String>
+        <langId=0>主页</langId>
+        <langId=1>主頁</langId=1>
+        <langId=2>Home</langId=2>
+        <langId=3>ホーム</langId=3>
+        <langId=4>홈</langId=4>
+      </String>
+    </StringDef>
+
+    <StringDef>
+      <id>0x5300002</id>
+      <String>
+        <langId=0>设置</langId>
+        <langId=1>設定</langId=1>
+        <langId=2>Settings</langId=2>
+        <langId=3>設定</langId=3>
+        <langId=4>설정</langId=4>
+      </String>
+    </StringDef>
+
+    <StringDef>
+      <id>0x5300003</id>
+      <String>
+        <langId=0>关于</langId>
+        <langId=1>關於</langId=1>
+        <langId=2>About</langId=2>
+        <langId=3>情報</langId=3>
+        <langId=4>정보</langId=4>
+      </String>
+    </StringDef>
+
+  </Section>
+
+</root>
