@@ -1,30 +1,57 @@
-interface CaptionItemDTO {
+// models/Caption.ts
+export interface CaptionItemDTO {
   title: string;
   buttons: string[];
   tooltip?: string;
 }
 
-class CaptionMap {
-  private map: Map<string, CaptionItemDTO>;
+export class CaptionItem {
+  readonly title: string;
+  readonly buttons: readonly string[];
+  readonly tooltip?: string;
 
-  constructor(items: CaptionItemDTO[], ids: string[]) {
-    this.map = new Map();
-    items.forEach((item, idx) => {
-      this.map.set(ids[idx], item);
-    });
+  constructor(dto: CaptionItemDTO) {
+    this.title = dto.title;
+    this.buttons = dto.buttons;
+    this.tooltip = dto.tooltip;
   }
 
-  get(id: string) {
-    return this.map.get(id);
+  // 返回新的实例，安全修改
+  set<K extends keyof Omit<CaptionItemDTO, "buttons">>(key: K, value: CaptionItemDTO[K]): CaptionItem {
+    const newObj = { ...this, [key]: value } as CaptionItemDTO;
+    return new CaptionItem(newObj);
   }
 
-  set(id: string, item: CaptionItemDTO) {
-    const newMap = new Map(this.map);
-    newMap.set(id, item);
-    return new CaptionMap(Array.from(newMap.values()), Array.from(newMap.keys()));
+  // 如果需要修改 buttons，可以单独写方法
+  setButtons(newButtons: string[]): CaptionItem {
+    return new CaptionItem({ ...this, buttons: newButtons });
+  }
+}
+
+export class CaptionMap {
+  private readonly map: Map<string, CaptionItem>;
+
+  constructor(items: CaptionItemDTO[]) {
+    const newMap = new Map<string, CaptionItem>();
+    items.forEach(item => newMap.set(item.title, new CaptionItem(item))); // 用 title 作为 key，也可以自定义 id
+    this.map = newMap;
   }
 
-  values() {
+  // 对外只提供只读访问
+  get(key: string): CaptionItem | undefined {
+    return this.map.get(key);
+  }
+
+  values(): readonly CaptionItem[] {
     return Array.from(this.map.values());
+  }
+
+  // 修改方法返回新实例，不改变原来的 map
+  set(key: string, item: CaptionItem): CaptionMap {
+    const newMap = new Map(this.map);
+    newMap.set(key, item);
+    const newCaptionMap = Object.create(CaptionMap.prototype) as CaptionMap;
+    (newCaptionMap as any).map = newMap; // 私有赋值
+    return newCaptionMap;
   }
 }
