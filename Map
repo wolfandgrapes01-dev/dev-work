@@ -1,0 +1,30 @@
+interface CaptionItemDTO {
+  title: string;
+  buttons: string[];
+  tooltip?: string;
+}
+
+class CaptionMap {
+  private map: Map<string, CaptionItemDTO>;
+
+  constructor(items: CaptionItemDTO[], ids: string[]) {
+    this.map = new Map();
+    items.forEach((item, idx) => {
+      this.map.set(ids[idx], item);
+    });
+  }
+
+  get(id: string) {
+    return this.map.get(id);
+  }
+
+  set(id: string, item: CaptionItemDTO) {
+    const newMap = new Map(this.map);
+    newMap.set(id, item);
+    return new CaptionMap(Array.from(newMap.values()), Array.from(newMap.keys()));
+  }
+
+  values() {
+    return Array.from(this.map.values());
+  }
+}
