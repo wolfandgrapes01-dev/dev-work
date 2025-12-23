@@ -4,6 +4,7 @@ from pathlib import Path
 # ===================== 配置 =====================
 INPUT_XML = "strings.xml"  # 输入 XML 文件
 OUTPUT_TS = "../DcsGuiFront/react/src/constants/record-table.ts"  # 输出 TS 文件（与 tools 同层级）
+OUTPUT_LOG = "../DcsGuiFront/react/src/constants/record-table.log"  # 日志文件
 LANG_COUNT = 5  # 固定 5 种语言
 # ================================================
 
@@ -13,13 +14,15 @@ def parse_xml(xml_path: str):
     return data
 
 def extract_records(data):
-    """提取 id -> [lang0, lang1, lang2, lang3, lang4]"""
+    """提取 id -> [lang0, lang1, lang2, lang3, lang4]，缺失语言的 id 将排除"""
     root = data.get("root", {})
     sections = root.get("Section", [])
     if isinstance(sections, dict):
         sections = [sections]
 
     records = {}
+    included_ids = []
+    excluded_ids = []
 
     for section in sections:
         string_defs = section.get("StringDef", [])
@@ -40,11 +43,18 @@ def extract_records(data):
             for t in langs:
                 idx = int(t["@langId"])
                 if 0 <= idx < LANG_COUNT:
-                    lang_map[idx] = t.get("#text", "").strip()
+                    # 保留 \n 原样
+                    lang_map[idx] = t.get("#text", "")
+
+            # 检查是否有缺失语言
+            if "" in lang_map:
+                excluded_ids.append(string_id)
+                continue
 
             records[string_id] = lang_map
+            included_ids.append(string_id)
 
-    return records
+    return records, included_ids, excluded_ids
 
 def generate_ts_class(records, output_path=OUTPUT_TS):
     lines = []
@@ -67,9 +77,20 @@ def generate_ts_class(records, output_path=OUTPUT_TS):
     lines.append("}\n")
 
     Path(output_path).write_text("".join(lines), encoding="utf-8")
-    print(f"Generated -> {output_path}")
+
+def write_log(included_ids, excluded_ids, log_path=OUTPUT_LOG):
+    lines = ["==== RecordTable Generation Log ====\n\n"]
+    lines.append(f"Included IDs ({len(included_ids)}):\n")
+    for id in included_ids:
+        lines.append(f"  {id}\n")
+    lines.append("\n")
+    lines.append(f"Excluded IDs due to missing language ({len(excluded_ids)}):\n")
+    for id in excluded_ids:
+        lines.append(f"  {id}\n")
+    Path(log_path).write_text("".join(lines), encoding="utf-8")
 
 if __name__ == "__main__":
     xml_data = parse_xml(INPUT_XML)
-    records = extract_records(xml_data)
+    records, included_ids, excluded_ids = extract_records(xml_data)
     generate_ts_class(records)
+    write_log(included_ids, excluded_ids)
