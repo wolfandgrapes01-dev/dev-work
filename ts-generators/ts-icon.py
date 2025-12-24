@@ -76,6 +76,11 @@ def generate_ts():
     for k, v in mapping.items():
         lines.append(f'export const {k} = "{v}";')
 
+    lines.append("\n")
+    # 生成所有变量合集数组
+    all_keys = ", ".join(mapping.keys())
+    lines.append(f"export const ALL_PUBLIC_PATHS = [{all_keys}];\n")
+    
     # 确保输出目录存在
     OUTPUT_FILE.parent.mkdir(parents=True, exist_ok=True)
     # 写入 TS 文件
