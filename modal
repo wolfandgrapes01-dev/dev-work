@@ -1,171 +1,120 @@
-import { createContext, useContext, useState } from "react";
-
-type ModalState = {
-  open: boolean;
-  content: React.ReactNode;
-};
-
-const ModalContext = createContext<any>(null);
-
-export function ModalProvider({ children }: { children: React.ReactNode }) {
-  const [modal, setModal] = useState<ModalState>({
-    open: false,
-    content: null,
-  });
-
-  const openModal = (content: React.ReactNode) =>
-    setModal({ open: true, content });
-
-  const closeModal = () =>
-    setModal({ open: false, content: null });
-
-  return (
-    <ModalContext.Provider value={{ openModal, closeModal }}>
-      {children}
-      <ModalRoot modal={modal} onClose={closeModal} />
-    </ModalContext.Provider>
-  );
-}
-
-export const useModal = () => useContext(ModalContext);
-
-
-
-
-
+import React, {
+  createContext,
+  useContext,
+  useState,
+  ReactNode,
+} from "react";
 import ReactDOM from "react-dom";
 
-export function ModalRoot({
-  modal,
+/* =======================
+ * Types
+ * ======================= */
+
+export type ModalVariant =
+  | "center"
+  | "bottom"
+  | "fullscreen";
+
+/* =======================
+ * Context
+ * ======================= */
+
+type ModalContextValue = {
+  openModal: (
+    content: ReactNode,
+    variant?: ModalVariant
+  ) => void;
+  closeModal: () => void;
+};
+
+const ModalContext =
+  createContext<ModalContextValue | null>(null);
+
+/* =======================
+ * Provider
+ * ======================= */
+
+export const ModalProvider = ({
+  children,
+}: {
+  children: ReactNode;
+}) => {
+  const [state, setState] = useState<{
+    content: ReactNode;
+    variant: ModalVariant;
+  } | null>(null);
+
+  const openModal = (
+    content: ReactNode,
+    variant?: ModalVariant
+  ) => {
+    setState({
+      content,
+      variant: variant ?? "center",
+    });
+  };
+
+  const closeModal = () => {
+    setState(null);
+  };
+
+  return (
+    <ModalContext.Provider
+      value={{ openModal, closeModal }}
+    >
+      {children}
+
+      {state && (
+        <ModalRoot
+          variant={state.variant}
+          onClose={closeModal}
+        >
+          {state.content}
+        </ModalRoot>
+      )}
+    </ModalContext.Provider>
+  );
+};
+
+/* =======================
+ * Hook
+ * ======================= */
+
+export const useModal = () => {
+  const ctx = useContext(ModalContext);
+  if (!ctx) {
+    throw new Error(
+      "useModal must be used within ModalProvider"
+    );
+  }
+  return ctx;
+};
+
+/* =======================
+ * Modal Root
+ * ======================= */
+
+const ModalRoot = ({
+  children,
+  variant,
   onClose,
 }: {
-  modal: { open: boolean; content: React.ReactNode };
+  children: ReactNode;
+  variant: ModalVariant;
   onClose: () => void;
-}) {
-  if (!modal.open) return null;
-
+}) => {
   return ReactDOM.createPortal(
-    <div style={styles.backdrop} onClick={onClose}>
+    <div
+      className="modal-backdrop"
+      onClick={onClose}
+    >
       <div
-        style={styles.modal}
+        className={`modal modal--${variant}`}
         onClick={(e) => e.stopPropagation()}
       >
-        {modal.content}
+        {children}
       </div>
     </div>,
     document.body
   );
-}
-
-const styles = {
-  backdrop: {
-    position: "fixed" as const,
-    inset: 0,
-    background: "rgba(0,0,0,0.5)",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modal: {
-    background: "#fff",
-    padding: 20,
-    minWidth: 300,
-    borderRadius: 8,
-  },
 };
-
-
-
-
-
-export function UserDetailModal({
-  userId,
-  mode,
-  onClose,
-}: {
-  userId: number;
-  mode: "view" | "edit";
-  onClose: () => void;
-}) {
-  return (
-    <>
-      <h2>
-        用户 {userId}（{mode}）
-      </h2>
-      <p>这里是业务内容</p>
-      <button onClick={onClose}>关闭</button>
-    </>
-  );
-}
-
-
-
-
-import { useModal } from "../ModalContext";
-import { UserDetailModal } from "../UserDetailModal";
-
-export function PageA() {
-  const { openModal, closeModal } = useModal();
-
-  return (
-    <button
-      onClick={() =>
-        openModal(
-          <UserDetailModal
-            userId={1}
-            mode="view"
-            onClose={closeModal}
-          />
-        )
-      }
-    >
-      Page A 打开 Modal
-    </button>
-  );
-}
-
-
-
-
-
-import { useModal } from "../ModalContext";
-import { UserDetailModal } from "../UserDetailModal";
-
-export function PageB() {
-  const { openModal, closeModal } = useModal();
-
-  return (
-    <button
-      onClick={() =>
-        openModal(
-          <UserDetailModal
-            userId={1}
-            mode="edit"
-            onClose={closeModal}
-          />
-        )
-      }
-    >
-      Page B 打开 Modal
-    </button>
-  );
-}
-
-
-
-
-
-import { ModalProvider } from "./ModalContext";
-import { PageA } from "./pages/PageA";
-import { PageB } from "./pages/PageB";
-
-export default function App() {
-  return (
-    <ModalProvider>
-      <PageA />
-      <PageB />
-    </ModalProvider>
-  );
-}
-
-
