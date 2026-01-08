@@ -1,0 +1,23 @@
+src/
+ ├─ api/
+ │   ├─ user/
+ │   │   ├─ user.request.ts      // 所有 User 相关的 Request
+ │   │   ├─ user.response.ts     // 所有 User 相关的 Response
+ │   │   ├─ user.api.ts          // axios / fetch 实现
+ │   │   └─ user.mapper.ts       // Response → Domain
+ │   │
+ │   ├─ auth/
+ │   │   ├─ auth.request.ts
+ │   │   ├─ auth.response.ts
+ │   │   └─ auth.api.ts
+ │
+ ├─ domain/
+ │   ├─ user.ts                  // 前端领域模型（干净、稳定）
+ │
+ ├─ features/
+ │   ├─ user/
+ │   │   ├─ useUser.ts           // hooks
+ │   │   ├─ UserPage.tsx
+ │   │   └─ user.state.ts        // UI state（可选）
+ │
+ └─ shared/
