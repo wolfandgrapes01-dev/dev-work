@@ -1,0 +1,5 @@
+// config 編集
+git config --global --edit
+
+// 手動コミット
+git commit -m "keyboard"
