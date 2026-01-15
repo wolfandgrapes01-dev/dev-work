@@ -3,18 +3,18 @@ import 'react-simple-keyboard/build/css/index.css'
 import japanese from 'simple-keyboard-layouts/build/layouts/japanese'
 import KeyboardReact from 'react-simple-keyboard'
 import { useRef, useState } from 'react';
-import type { KeyboardLayoutObject, KeyboardReactInterface } from 'react-simple-keyboard'
+import type {  KeyboardReactInterface } from 'react-simple-keyboard'
 
 
 const Keyboard = () => {
-  const numric: KeyboardLayoutObject = {
-    default: ["1 2 3", "4 5 6", "7 8 9", "{shift} 0 _", "{bksp}"],
-    shift: ["! / #", "$ % ^", "& * (", "{shift} ) +", "{bksp}"]
-  };
+  // const numric: KeyboardLayoutObject = {
+  //   default: ["1 2 3", "4 5 6", "7 8 9", "{shift} 0 _", "{bksp}"],
+  //   shift: ["! / #", "$ % ^", "& * (", "{shift} ) +", "{bksp}"]
+  // };
   const theme = "hg-theme-default hg-layout-numeric numeric-theme"
   
   const [input, setInput] = useState("Hello nigga");
-  const [layout, setLayout] = useState<KeyboardLayoutObject>(japanese.layout)
+  // const [layout, setLayout] = useState<KeyboardLayoutObject>(japanese.layout)
   const [layoutName, setLayoutName] = useState<"default" | "shift">("default")
   const keyboardRef = useRef<KeyboardReactInterface | null>(null)
 
@@ -58,7 +58,7 @@ const Keyboard = () => {
           keyboardInstance.setInput(input)
         }}
         keyboardRef={r => (keyboardRef.current = r)}  // 物理キーボードの入力をVitural Keyboardに同期
-        layout={layout}
+        layout={japanese.layout}
         layoutName={layoutName}
         theme={theme}
         onChange={onChange}

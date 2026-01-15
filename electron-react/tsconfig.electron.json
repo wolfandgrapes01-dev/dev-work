@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2022",
+    "module": "CommonJS",
+    "outDir": "./dist-electron",
+    "moduleResolution": "node",
+    "types": ["node", "electron"],
+    "skipLibCheck": true,
+    "noEmit": false
+  },
+  "include": ["src/electron/**/*.ts"]
+}
