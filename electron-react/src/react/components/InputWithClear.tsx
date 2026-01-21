@@ -10,7 +10,6 @@ const InputWithClear = ({ value, onClear, onChange }: InputWithClearProps) => {
     <div style={{ display: "flex", gap: 8 }}>
       <input
         value={value}
-        placeholder="Tap on the virtual keyboard to start"
         onChange={(e) => {
           onChange(e.target.value);
         }}

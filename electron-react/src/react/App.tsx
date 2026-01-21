@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import "./App.css";
-import Keyboard, { type KeyboardHandle } from "./Keyboard";
-import InputWithClear from "./InputWithClear";
+import Keyboard, { type KeyboardHandle } from "./components/Keyboard";
+import InputWithClear from "./components/InputWithClear";
 
 const App = () => {
   const [input, setInput] = useState("HELLO");
