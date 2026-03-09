@@ -1,0 +1,191 @@
+import flet as ft
+
+
+class MainRouter:
+
+    def __init__(self):
+        self.container = ft.Container(expand=True)
+        self.routes = {}
+        self.history = []
+        self.index = -1
+
+    def register(self, name, builder):
+        self.routes[name] = builder
+
+    def go(self, name):
+
+        if name not in self.routes:
+            return
+
+        # 如果在历史中间跳转，需要删除未来历史
+        if self.index < len(self.history) - 1:
+            self.history = self.history[: self.index + 1]
+
+        self.history.append(name)
+        self.index += 1
+
+        self.render()
+
+    def back(self):
+
+        if self.index > 0:
+            self.index -= 1
+            self.render()
+
+    def forward(self):
+
+        if self.index < len(self.history) - 1:
+            self.index += 1
+            self.render()
+
+    def render(self):
+
+        route = self.history[self.index]
+        view = self.routes[route]()
+
+        self.container.content = view
+        self.container.update()
+
+
+# -------------------------
+# Screens
+# -------------------------
+
+def dashboard(router):
+
+    return ft.Column(
+        controls=[
+            ft.Text("Dashboard Page", size=24),
+
+            ft.ElevatedButton(
+                "Open Monitor Page",
+                on_click=lambda e: router.go("monitor")
+            )
+        ]
+    )
+
+
+def monitor(router):
+
+    return ft.Column(
+        controls=[
+            ft.Text("Monitor Page", size=24),
+
+            ft.ElevatedButton(
+                "Open Chart Page",
+                on_click=lambda e: router.go("chart")
+            )
+        ]
+    )
+
+
+def chart(router):
+
+    return ft.Column(
+        controls=[
+            ft.Text("Chart Page", size=24)
+        ]
+    )
+
+
+# -------------------------
+# Panels
+# -------------------------
+
+def title_panel():
+
+    return ft.Container(
+        height=60,
+        bgcolor="blue",
+        alignment=ft.alignment.center,
+        content=ft.Text("System Status: RUNNING")
+    )
+
+
+def navigation_panel(router):
+
+    return ft.Column(
+        width=200,
+        controls=[
+
+            ft.Text("Navigation", size=18),
+
+            ft.ElevatedButton(
+                "Back",
+                on_click=lambda e: router.back()
+            ),
+
+            ft.ElevatedButton(
+                "Forward",
+                on_click=lambda e: router.forward()
+            )
+        ]
+    )
+
+
+def bottom_panel():
+
+    return ft.Container(
+        height=80,
+        bgcolor="grey",
+        content=ft.Row(
+            alignment=ft.MainAxisAlignment.CENTER,
+            controls=[
+
+                ft.ElevatedButton("Start"),
+                ft.ElevatedButton("Stop"),
+                ft.ElevatedButton("Reset")
+            ]
+        )
+    )
+
+
+# -------------------------
+# Main App
+# -------------------------
+
+def main(page: ft.Page):
+
+    router = MainRouter()
+
+    router.register("dashboard", lambda: dashboard(router))
+    router.register("monitor", lambda: monitor(router))
+    router.register("chart", lambda: chart(router))
+
+    router.go("dashboard")
+
+    middle = ft.Row(
+        expand=True,
+        controls=[
+
+            ft.Container(
+                expand=4,
+                bgcolor="green",
+                content=router.container
+            ),
+
+            ft.Container(
+                expand=1,
+                bgcolor="orange",
+                content=navigation_panel(router)
+            )
+        ]
+    )
+
+    layout = ft.Column(
+        expand=True,
+        spacing=0,
+        controls=[
+
+            title_panel(),
+
+            middle,
+
+            bottom_panel()
+        ]
+    )
+
+    page.add(layout)
+
+
+ft.app(target=main)
