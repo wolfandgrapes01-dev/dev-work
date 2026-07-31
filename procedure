@@ -1,0 +1,129 @@
+CREATE PROCEDURE dbo.GetDiskSpace
+AS
+BEGIN
+
+    SET NOCOUNT ON;
+
+
+    CREATE TABLE #DiskTemp
+    (
+        OutputLine VARCHAR(500)
+    );
+
+
+    /*
+       获取Windows磁盘信息
+       事务外执行
+    */
+
+    INSERT INTO #DiskTemp
+    EXEC xp_cmdshell 
+    'powershell -command "Get-CimInstance Win32_LogicalDisk -Filter \"DriveType=3\" | ForEach-Object { $_.DeviceID + '','' + [math]::Round($_.Size/1GB,2) + '','' + [math]::Round($_.FreeSpace/1GB,2) }"';
+
+
+
+    /*
+       更新DiskInfo
+       使用事务
+    */
+
+    BEGIN TRANSACTION;
+
+    BEGIN TRY
+
+
+        DELETE FROM dbo.DiskInfo;
+
+
+        INSERT INTO dbo.DiskInfo
+        (
+            Drive,
+            TotalGB,
+            FreeGB,
+            NeedAlert,
+            AlertSent
+        )
+
+
+        SELECT
+
+
+            LEFT(
+                OutputLine,
+                CHARINDEX(',',OutputLine)-1
+            ),
+
+
+            CAST(
+                SUBSTRING(
+                    OutputLine,
+                    CHARINDEX(',',OutputLine)+1,
+                    CHARINDEX(',',OutputLine,CHARINDEX(',',OutputLine)+1)
+                    -CHARINDEX(',',OutputLine)-1
+                )
+                AS DECIMAL(10,2)
+            ),
+
+
+            CAST(
+                RIGHT(
+                    OutputLine,
+                    LEN(OutputLine)
+                    -CHARINDEX(',',OutputLine,CHARINDEX(',',OutputLine)+1)
+                )
+                AS DECIMAL(10,2)
+            ),
+
+
+            CASE
+
+                WHEN CAST(
+                    RIGHT(
+                        OutputLine,
+                        LEN(OutputLine)
+                        -CHARINDEX(',',OutputLine,CHARINDEX(',',OutputLine)+1)
+                    )
+                    AS DECIMAL(10,2)
+                ) < 10
+
+                THEN 1
+
+                ELSE 0
+
+            END,
+
+
+            0
+
+
+        FROM #DiskTemp
+
+        WHERE OutputLine LIKE '%:%';
+
+
+
+        COMMIT TRANSACTION;
+
+
+    END TRY
+
+
+    BEGIN CATCH
+
+
+        IF @@TRANCOUNT > 0
+            ROLLBACK TRANSACTION;
+
+
+        THROW;
+
+
+    END CATCH
+
+
+
+    DROP TABLE #DiskTemp;
+
+
+END;
+GO
