@@ -1,0 +1,43 @@
+DECLARE @Drive VARCHAR(10);
+DECLARE @FreeGB DECIMAL(10,2);
+DECLARE @Cmd VARCHAR(500);
+
+
+SELECT TOP 1
+
+    @Drive = Drive,
+    @FreeGB = FreeGB
+
+FROM dbo.DiskInfo
+
+WHERE NeedAlert = 1
+AND AlertSent = 0;
+
+
+
+IF @Drive IS NOT NULL
+
+BEGIN
+
+
+    SET @Cmd =
+    'msg * "Disk Warning: '
+    + @Drive
+    + ' Free Space '
+    + CAST(@FreeGB AS VARCHAR)
+    + 'GB"';
+
+
+
+    EXEC xp_cmdshell @Cmd;
+
+
+
+    UPDATE dbo.DiskInfo
+
+    SET AlertSent = 1
+
+    WHERE Drive = @Drive;
+
+
+END
