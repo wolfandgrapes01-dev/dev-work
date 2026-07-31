@@ -1,0 +1,10 @@
+CREATE TABLE dbo.DiskInfo
+(
+    Drive VARCHAR(10),
+    TotalGB DECIMAL(10,2),
+    FreeGB DECIMAL(10,2),
+    NeedAlert BIT,
+    AlertSent BIT,
+    UpdateTime DATETIME DEFAULT GETDATE()
+);
+GO
